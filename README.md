@@ -252,9 +252,9 @@ or a failing utility is an error and nothing is printed or copied elsewhere.
 { "schema_version": "cli2.batch.v1",
   "on_failure": "stop",
   "steps": [
-    { "id": "scan",  "request": { "schema_version": "cli2.request.v1", "intent": "scan",
+    { "id": "build", "request": { "schema_version": "cli2.request.v1", "intent": "build the project",
                                   "context": { "working_directory": "." } } },
-    { "id": "tests", "depends_on": ["scan"],
+    { "id": "tests", "depends_on": ["build"],
       "request": { "schema_version": "cli2.request.v1", "intent": "run the project tests" } }
   ] }
 ```
