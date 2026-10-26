@@ -1,4 +1,0 @@
-module CLI2AppleFM {
-header "CLI2AppleFM-Swift.h"
-export *
-}

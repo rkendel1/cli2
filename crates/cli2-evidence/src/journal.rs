@@ -118,6 +118,61 @@ impl Journal {
         Ok(format!("evidence:sha256:{hash}"))
     }
 
+    /// Every recorded result, oldest first (the order is the journal's own).
+    pub fn all_results(&self) -> Result<Vec<(i64, ExecutionResult)>, JournalError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT seq, json FROM results ORDER BY seq ASC")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (seq, json) = row?;
+            out.push((seq, from_json(&json)?));
+        }
+        Ok(out)
+    }
+
+    /// Events of one kind, oldest first, as `(seq, request_id, data)`.
+    pub fn events_of_kind(
+        &self,
+        kind: &str,
+    ) -> Result<Vec<(i64, String, serde_json::Value)>, JournalError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT seq, request_id, json FROM events WHERE kind = ?1 ORDER BY seq ASC")?;
+        let rows = stmt.query_map(params![kind], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (seq, req, json) = row?;
+            out.push((
+                seq,
+                req,
+                serde_json::from_str(&json).unwrap_or(serde_json::Value::Null),
+            ));
+        }
+        Ok(out)
+    }
+
+    /// `(highest result seq, highest event seq)`: how much history exists.
+    /// A derived index records this to know whether it is current.
+    pub fn watermark(&self) -> Result<(i64, i64), JournalError> {
+        let r: i64 = self
+            .conn
+            .query_row("SELECT COALESCE(MAX(seq), 0) FROM results", [], |r| {
+                r.get(0)
+            })?;
+        let e: i64 = self
+            .conn
+            .query_row("SELECT COALESCE(MAX(seq), 0) FROM events", [], |r| r.get(0))?;
+        Ok((r, e))
+    }
+
     /// The data of the newest event of `kind` recorded under `request_id`.
     pub fn latest_event_data(
         &self,

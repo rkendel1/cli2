@@ -7,6 +7,7 @@ pub mod engine;
 pub mod output;
 pub mod render;
 pub mod semantic;
+pub mod workflow;
 
 pub use engine::{
     digest_matches, ApprovalAnswer, CaptureNote, Config, Engine, EngineError, Interaction,

@@ -294,6 +294,79 @@ From zsh, Ghostty and VS Code the integration is unchanged: `c2` forwards
 `--output …` like any other flag, and `cli2 output copy … | pbcopy` works in any
 terminal.
 
+## Learning from history (workflows)
+
+cli2 can recognize that you have done something before and propose reusing it,
+**without** treating history as permission. Learning is evidence-backed
+retrieval; every reuse is a fresh plan under today's rules.
+
+```sh
+cli2 history search "run the project tests"     # what have I done like this, and does it still hold?
+cli2 workflow show wf_e17                       # steps, evidence, and validity right now
+cli2 workflow replay wf_e17 --no-exec           # a FRESH plan (nothing runs)
+cli2 exec plan_…                                # run it: normal approval, execution, verification
+```
+
+**Where it comes from.** A *workflow* is derived from the journal that already
+exists (requests, plans, results, approvals, batch records, the interface
+metadata used at the time). `wf_e<N>` is the execution `exec_<N>`; `wf_b<hex>`
+is a recorded batch (steps, order, dependencies, failure policy and each step's
+outcome). The derived index lives in `$CLI2_HOME/workflows.db`, separate from the
+journal. It is disposable: delete it (or let it be damaged) and it is rebuilt
+from the journal, identically; `cli2 workflow reindex` does it explicitly and
+prints a fingerprint of the result. Nothing is stored there that the journal
+does not already prove, and it is never consulted as a source of truth.
+Ordinary requests keep it fresh only while history is small (300 executions);
+beyond that, history commands refresh it.
+
+**Outcomes are distinct:** `task_verified`, `process_succeeded` (exit 0, task
+**not** verified: success unknown), `process_failed`, `task_failed_verification`,
+`timed_out`, `interrupted`, `approval_required`, `approval_denied`,
+`not_performed`. **Eligibility rule:** a workflow is eligible for retrieval only
+if every step ran and passed task-level verification (for a batch, every step,
+and the batch succeeded). Missing verification is *unknown*, not success.
+
+**Validity is checked live**, in your current directory, every time it is shown:
+
+| State | Meaning |
+|---|---|
+| `validated` | Eligible, and every recorded assumption still holds. Not a plan, not an authorization. |
+| `candidate` | Eligible, nothing changed, but something could not be confirmed (listed). |
+| `stale` | An assumption changed (listed). Still visible; never presented as current. |
+| `ineligible` | The evidence never met the rule (or the journal failed its integrity check). |
+
+Checked: the capability is still discovered; its identity (executable file or
+task definition) is unchanged; the captured interface metadata is unchanged and
+still sufficiently understood; the project context is the same (a subdirectory
+of the same project counts); today's policy asks for the same approval and does
+not now reject it; the output evidence that supported the outcome is still
+retained (not pruned).
+
+**Reuse is replanning.** `workflow replay` builds a fresh plan for each step:
+the request is re-resolved *pinned to the capability the workflow used*, its
+interface is re-checked, arguments are constructed from the current interface
+and the original explicit inputs (override with `--arg NAME=VALUE`), and
+policy, approval and verification are assessed now. The recorded command line
+is shown only for comparison; it is never executed. Historical approval is
+shown as history and never applied: `exec` of a replayed plan asks for approval
+again (`--yes` still cannot approve what policy now requires explicitly). If an
+input is no longer available or the capability is gone, the plan is not built
+and the blocker is reported. Each replay is recorded in evidence
+(`workflow_replay`, linked to the workflow). Batches replay as one fresh plan
+per step; there is no substitution of earlier output into later steps and no
+generated script. Replay never executes in this release.
+
+**Explanations are deterministic.** Each suggestion says why it matches (the
+shared terms and similarity), which execution supports it, whether the task was
+verified, what is unchanged or changed, and what would be planned. With
+`--resolver apple-fm` the on-device model may only *reorder matches that were
+already found*; its answer is validated like any other (an unknown workflow ID
+rejects it and the deterministic order stays), and it cannot relabel an
+unverified workflow: outcome, validity and explanation come from the evidence.
+Ordinary requests also get a one-line `History:` note in the plan's
+limitations when a verified, still-valid workflow resembles them; it does not
+change what is planned or approved.
+
 ## Commands
 
 | Command | Purpose |
@@ -310,6 +383,8 @@ terminal.
 | `cli2 schema [NAME]` | Print the published JSON Schemas. |
 | `cli2 "intent" --output response\|command-and-response\|json` | Choose what is printed (see *Output capture and reuse*). Also on `plan` and `exec`. |
 | `cli2 output list\|show ID\|copy ID [--part …] [--clipboard]\|prune --older-than-days N` | Retrieve captured results by stable ID. |
+| `cli2 history search [TEXT] [--verified-only] [--resolver apple-fm]` | Find past workflows resembling a request, with live validity and an explanation. |
+| `cli2 workflow show ID` / `replay ID [--no-exec] [--arg N=V]` / `reindex` | Inspect a workflow; get a **fresh plan** from it (never executes); rebuild the derived index. |
 | `cli2 batch --request-file FILE [--yes]` / `--show BATCH_ID` | Run a structured batch of requests. |
 | `cli2 shell-init zsh` | Print the optional zsh integration (`c2`, completion). Writes nothing. |
 | `cli2 completions zsh` | Print a standalone zsh completion script generated from the CLI definition. |

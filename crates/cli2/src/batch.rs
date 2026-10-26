@@ -129,6 +129,8 @@ pub enum StepState {
 #[derive(Debug, Clone, Serialize)]
 pub struct StepOutcome {
     pub id: String,
+    /// Steps this one required to have succeeded (as written in the batch file).
+    pub depends_on: Vec<String>,
     pub state: StepState,
     /// The request's status, when it ran.
     pub status: Option<Status>,
@@ -211,6 +213,7 @@ pub fn run_batch(
         });
         let skeleton = |state, message: String| StepOutcome {
             id: step.id.clone(),
+            depends_on: step.depends_on.clone(),
             state,
             status: None,
             request_id: None,
@@ -302,6 +305,7 @@ mod tests {
     fn step(status: Option<Status>, outputs: usize) -> StepOutcome {
         StepOutcome {
             id: "s".into(),
+            depends_on: vec![],
             state: if status.is_some() {
                 StepState::Ran
             } else {

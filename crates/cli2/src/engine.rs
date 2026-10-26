@@ -238,8 +238,8 @@ struct Freshness {
 
 pub struct Engine {
     pub config: Config,
-    index: Index,
-    journal: Journal,
+    pub(crate) index: Index,
+    pub(crate) journal: Journal,
     ranker: Box<dyn SemanticRanker>,
     cancel: CancelToken,
     settings: ResolverSettings,
@@ -905,6 +905,14 @@ impl Engine {
                 }
             }
         }
+
+        // Advice from verified history. It never influences what is planned.
+        let planned_cap = match &resolution {
+            Resolution::Planned(d) => Some(d.selected.id.clone()),
+            Resolution::Clarify { .. } => None,
+        };
+        let advice = self.history_advice(&request.intent, &wd, planned_cap.as_deref());
+        notes.extend(advice);
 
         let draft = match resolution {
             Resolution::Clarify {

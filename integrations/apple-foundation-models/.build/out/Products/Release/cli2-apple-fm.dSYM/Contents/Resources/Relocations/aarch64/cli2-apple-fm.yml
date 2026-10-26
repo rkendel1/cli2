@@ -1,5 +1,0 @@
----
-triple:          'arm64-apple-darwin'
-binary-path:     '/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Products/Release/cli2-apple-fm'
-relocations:     []
-...

@@ -255,11 +255,13 @@ dependencies = [
  "cli2-index",
  "cli2-resolver",
  "ctrlc",
+ "hex",
  "jsonschema",
  "libc",
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror",
 ]

@@ -190,6 +190,16 @@ enum Cmd {
         #[command(subcommand)]
         cmd: OutputCmd,
     },
+    /// Search what cli2 has done before (evidence-backed, never authority).
+    History {
+        #[command(subcommand)]
+        cmd: HistoryCmd,
+    },
+    /// Inspect a recorded workflow and ask for a fresh plan based on it.
+    Workflow {
+        #[command(subcommand)]
+        cmd: WorkflowCmd,
+    },
     /// Run a structured batch of requests (see README: `cli2.batch.v1`).
     Batch {
         /// A cli2.batch.v1 JSON file ('-' for stdin).
@@ -232,6 +242,44 @@ enum Cmd {
         /// request | capability | plan | result | approval
         name: Option<String>,
     },
+}
+
+#[derive(Subcommand)]
+enum HistoryCmd {
+    /// Find past workflows resembling a request, with live validity and an explanation.
+    Search {
+        /// What you want to do (omit to list recent history).
+        text: Vec<String>,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+        /// Only workflows whose task verification passed (the eligible ones).
+        #[arg(long)]
+        verified_only: bool,
+        /// Also list executions that were steps of a recorded batch.
+        #[arg(long)]
+        include_batch_steps: bool,
+        /// `apple-fm`: let the on-device model reorder the matches already found.
+        #[arg(long, value_name = "MODE", value_parser = ["deterministic", "apple-fm"])]
+        resolver: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum WorkflowCmd {
+    /// Show a workflow: steps, recorded outcome and evidence, and current validity.
+    Show { id: String },
+    /// Build a FRESH plan for each step from a workflow. Never executes anything.
+    Replay {
+        id: String,
+        /// Accepted for clarity: replay only plans in this release.
+        #[arg(long)]
+        no_exec: bool,
+        /// Supply or override an input for every step (NAME=VALUE, repeatable).
+        #[arg(long = "arg", value_name = "NAME=VALUE")]
+        args: Vec<String>,
+    },
+    /// Rebuild the derived workflow index from the journal.
+    Reindex,
 }
 
 #[derive(Subcommand)]
@@ -592,6 +640,101 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
             match &output {
                 Some(fmt) => Ok(emit_output(&engine, &result, fmt)),
                 None => Ok(report(&engine, &result, json)),
+            }
+        }
+        Some(Cmd::History {
+            cmd:
+                HistoryCmd::Search {
+                    text,
+                    limit,
+                    verified_only,
+                    include_batch_steps,
+                    resolver,
+                },
+        }) => {
+            let mut engine = Engine::open(config)?;
+            let settings = engine.resolver_settings().clone();
+            let client = (resolver.as_deref() == Some("apple-fm")).then(|| {
+                cli2::semantic::bridge::BridgeClient::new(
+                    settings.bridge_path.clone(),
+                    settings.timeout_secs,
+                    settings.max_response_bytes,
+                )
+            });
+            let res = engine.search_history(
+                &text.join(" "),
+                &cwd,
+                &cli2::workflow::engine_ext::SearchOptions {
+                    limit,
+                    verified_only,
+                    include_batch_steps,
+                    refresh: true,
+                },
+                client.as_ref(),
+            )?;
+            if json {
+                print_json(&res);
+            } else {
+                print!("{}", render_history(&res));
+            }
+            Ok(0)
+        }
+        Some(Cmd::Workflow { cmd }) => {
+            let mut engine = Engine::open(config)?;
+            match cmd {
+                WorkflowCmd::Show { id } => {
+                    let wf = engine.workflow_get(&id)?;
+                    let v = engine.validate_workflows(&[&wf], &cwd)?.remove(0);
+                    if json {
+                        print_json(
+                            &serde_json::json!({"schema_version": "cli2.workflow_view.v1", "workflow": wf, "validity": v}),
+                        );
+                    } else {
+                        print!("{}", render_workflow(&wf, &v));
+                    }
+                    Ok(0)
+                }
+                WorkflowCmd::Replay {
+                    id,
+                    no_exec: _,
+                    args,
+                } => {
+                    let mut overrides = BTreeMap::new();
+                    for a in &args {
+                        let (k, v) = a.split_once('=').ok_or_else(|| {
+                            EngineError::Invalid(format!("--arg expects NAME=VALUE, got {a:?}"))
+                        })?;
+                        overrides.insert(k.to_lowercase(), v.to_string());
+                    }
+                    let replay = engine.replay_workflow(&id, &cwd, &overrides)?;
+                    let code = replay
+                        .steps
+                        .iter()
+                        .map(|s| s.result.status)
+                        .find(|s| *s != Status::Planned)
+                        .map(|s| s.exit_code())
+                        .unwrap_or(0);
+                    if json {
+                        print_json(&replay);
+                    } else {
+                        print!("{}", render_replay(&replay));
+                    }
+                    Ok(code)
+                }
+                WorkflowCmd::Reindex => {
+                    let (rep, fp) = engine.workflow_reindex()?;
+                    if json {
+                        print_json(&serde_json::json!({"index": rep, "fingerprint": fp}));
+                    } else {
+                        println!(
+                            "Rebuilt the derived workflow index from the journal: {} workflow(s), fingerprint {}.{}",
+                            rep.workflows,
+                            &fp[..12],
+                            rep.recovered_from.map(|p| format!(" The unusable previous file was moved to {p}.")).unwrap_or_default()
+                        );
+                    }
+                    Ok(0)
+                }
             }
         }
         Some(Cmd::Output { cmd }) => {
@@ -968,6 +1111,200 @@ fn output_command(engine: &mut Engine, cmd: OutputCmd, json: bool) -> Result<i32
             Ok(0)
         }
     }
+}
+
+fn render_history(r: &cli2::workflow::engine_ext::SearchResult) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    if r.hits.is_empty() {
+        let _ = writeln!(
+            s,
+            "No matching history{}.",
+            if r.query.is_empty() {
+                String::new()
+            } else {
+                format!(" for {:?}", r.query)
+            }
+        );
+        return s;
+    }
+    let _ = writeln!(
+        s,
+        "History matching {:?} (ordered by {}; history is evidence, not authority):",
+        r.query, r.ordered_by
+    );
+    if let Some(n) = &r.model_note {
+        let _ = writeln!(s, "  {n}");
+    }
+    if let Some(p) = &r.index.recovered_from {
+        let _ = writeln!(
+            s,
+            "  (the derived index was unusable and was rebuilt from the journal; old file: {p})"
+        );
+    }
+    for h in &r.hits {
+        let w = &h.workflow;
+        let _ = writeln!(
+            s,
+            "\n{}  [{:?}]  {:?}  {}  {:?}",
+            w.id, h.validity.state, w.outcome, w.recorded_at, w.intent
+        );
+        for l in &h.explanation {
+            let _ = writeln!(s, "    {l}");
+        }
+        let _ = writeln!(
+            s,
+            "    inspect: cli2 workflow show {}    fresh plan: cli2 workflow replay {}",
+            w.id, w.id
+        );
+    }
+    s
+}
+
+fn render_workflow(w: &cli2::workflow::Workflow, v: &cli2::workflow::validate::Validity) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let _ = writeln!(
+        s,
+        "{}  ({:?}{})",
+        w.id,
+        w.kind,
+        w.part_of_batch
+            .as_ref()
+            .map(|b| format!(", a step of {b}"))
+            .unwrap_or_default()
+    );
+    let _ = writeln!(s, "  request       {:?}", w.intent);
+    let _ = writeln!(s, "  recorded      {}", w.recorded_at);
+    let _ = writeln!(s, "  outcome       {:?}", w.outcome);
+    let _ = writeln!(
+        s,
+        "  eligibility   {}",
+        if w.eligibility.eligible {
+            "eligible (verified)".to_string()
+        } else {
+            format!("not eligible: {}", w.eligibility.reasons.join("; "))
+        }
+    );
+    let _ = writeln!(s, "  validity now  {:?}  (in {})", v.state, v.checked_in);
+    for r in &v.reasons {
+        let _ = writeln!(s, "                ✘ {r}");
+    }
+    for r in &v.unconfirmed {
+        let _ = writeln!(s, "                ? {r}");
+    }
+    for r in &v.confirmed {
+        let _ = writeln!(s, "                ✓ {r}");
+    }
+    if let (Some(b), Some(f)) = (&w.batch_id, &w.on_failure) {
+        let _ = writeln!(s, "  batch         {b}, on_failure {f}");
+    }
+    for st in &w.steps {
+        let _ = writeln!(s, "  step {:<8} {:?}", st.step_id, st.outcome);
+        if !st.intent.is_empty() {
+            let _ = writeln!(s, "    request     {:?}", st.intent);
+        }
+        if let Some(c) = &st.capability_id {
+            let _ = writeln!(s, "    capability  {c}");
+        }
+        if !st.recorded_argv.is_empty() {
+            let _ = writeln!(
+                s,
+                "    ran as      {}   (for comparison; never replayed)",
+                st.recorded_argv
+                    .iter()
+                    .map(|a| cli2_core::shell_quote(a))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+        }
+        if !st.depends_on.is_empty() {
+            let _ = writeln!(s, "    depends on  {}", st.depends_on.join(", "));
+        }
+        if let Some(e) = &st.execution_id {
+            let _ = writeln!(
+                s,
+                "    evidence    {e}  outputs {}  verification {:?}",
+                st.output_ids.join(","),
+                st.verification
+            );
+        }
+        if let Some(a) = &st.recorded_approval {
+            let _ = writeln!(
+                s,
+                "    approval    was {:?} / granted {} via {:?} (historical; not reused)",
+                a.required, a.granted, a.method
+            );
+        }
+    }
+    let _ = writeln!(
+        s,
+        "  next          cli2 workflow replay {}   (builds a fresh plan; nothing executes)",
+        w.id
+    );
+    s
+}
+
+fn render_replay(r: &cli2::workflow::engine_ext::Replay) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let _ = writeln!(
+        s,
+        "Fresh plan(s) from workflow {} — validity {:?}",
+        r.workflow_id, r.validity.state
+    );
+    for x in r.validity.reasons.iter().chain(&r.validity.unconfirmed) {
+        let _ = writeln!(s, "  ! {x}");
+    }
+    for st in &r.steps {
+        let _ = writeln!(s, "\nstep {:?}: {:?}", st.step_id, st.intent);
+        let _ = writeln!(
+            s,
+            "  recorded    {}   (historical; not reused)",
+            st.recorded_argv.join(" ")
+        );
+        match (&st.result.plan, &st.fresh_argv) {
+            (Some(p), Some(a)) => {
+                let _ = writeln!(
+                    s,
+                    "  fresh plan  {}   [{}]",
+                    a.iter()
+                        .map(|x| cli2_core::shell_quote(x))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    if st.argv_differs == Some(true) {
+                        "differs from the recorded command"
+                    } else {
+                        "same as the recorded command"
+                    }
+                );
+                let _ = writeln!(
+                    s,
+                    "  approval    {:?} required now{}",
+                    p.approval.level,
+                    st.recorded_approval
+                        .as_ref()
+                        .map(|a| format!(
+                            " (then: {:?}, granted {} — not carried over)",
+                            a.required, a.granted
+                        ))
+                        .unwrap_or_default()
+                );
+                let _ = writeln!(
+                    s,
+                    "  plan        {}  digest {}   run it: cli2 exec {}",
+                    p.plan_id,
+                    p.short_digest(),
+                    p.plan_id
+                );
+            }
+            _ => {
+                let _ = writeln!(s, "  blocked     {}", st.result.message);
+            }
+        }
+    }
+    let _ = writeln!(s, "\n{}", r.note);
+    s
 }
 
 fn render_output_record(r: &cli2::output::OutputRecord) -> String {
