@@ -87,9 +87,12 @@ fn a_valid_ranking_selects_among_supplied_candidates_and_is_recorded() {
     let r = plan(&mut e, &proj, "xyzzy plugh").unwrap();
     assert_eq!(r.status, Status::Planned);
     let p = r.plan.unwrap();
-    assert_eq!(p.steps[0].capability_id, "project-script:npm:test");
+    assert_eq!(p.steps[0].capability_id(), "project-script:npm:test");
     // The invocation comes from the manifest-derived interface, not the model.
-    assert_eq!(p.steps[0].arguments, vec!["run", "test"]);
+    assert_eq!(
+        p.steps[0].as_process().unwrap().arguments,
+        vec!["run", "test"]
+    );
     let ev = e.last_semantic().unwrap();
     assert_eq!(ev.ordered_by, "apple-foundation-models");
     assert!(!ev.fallback);
@@ -153,8 +156,11 @@ fn the_model_cannot_change_arguments_effects_or_approval() {
     let mut e = engine(&env, &bridge, ResolverMode::AppleFm, true);
     let r = plan(&mut e, &proj, "xyzzy plugh").unwrap();
     let p = r.plan.unwrap();
-    assert_eq!(p.steps[0].executable, "npm");
-    assert_eq!(p.steps[0].arguments, vec!["run", "publish-package"]);
+    assert_eq!(p.steps[0].as_process().unwrap().executable, "npm");
+    assert_eq!(
+        p.steps[0].as_process().unwrap().arguments,
+        vec!["run", "publish-package"]
+    );
     assert_eq!(
         p.approval.level,
         cli2_core::ApprovalLevel::Explicit,

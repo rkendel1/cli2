@@ -32,6 +32,9 @@ pub struct ProposalContext<'a> {
     /// Capabilities that actually exist here (bounded summary).
     pub capabilities: &'a [CapabilityBrief],
     pub history: Vec<HistoryItem>,
+    /// Read project files (recorded as events). The only way a proposer
+    /// learns file contents, and the source of the hashes patches depend on.
+    pub files: &'a dyn ProjectFiles,
     pub limits: &'a Limits,
     pub steps_used: u32,
     pub attempts: u32,
@@ -47,6 +50,7 @@ pub struct HistoryItem {
     pub intent: String,
     pub selection: Option<String>,
     pub satisfies: Vec<String>,
+    pub file_edit: Option<FileEditSpec>,
     pub status: StepStatus,
     pub detail: Option<String>,
     pub outcome: Option<StepOutcome>,
@@ -67,9 +71,36 @@ pub struct ProposedStep {
     pub note: Option<String>,
 }
 
+/// A text file as read from the project.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileContent {
+    pub path: String,
+    /// The version identifier a patch must name as `expected_sha256`.
+    pub sha256: String,
+    pub bytes: u64,
+    pub lines: u64,
+    pub content: String,
+}
+
+pub trait ProjectFiles: Send + Sync {
+    /// Read a file below the project root (no symbolic links, regular files,
+    /// bounded size, UTF-8). Each successful read is recorded in the task.
+    fn read(&self, path: &str) -> Result<FileContent, String>;
+}
+
+/// A modification of one file, as a request for the runtime to plan. It is
+/// always a `change`, can claim no criterion, and pins no capability.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProposedEdit {
+    pub objective: String,
+    pub edit: FileEditSpec,
+    pub note: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Proposal {
     Step(ProposedStep),
+    Edit(ProposedEdit),
     /// "I believe it is finished." Never trusted: criteria are re-evaluated.
     Done {
         note: Option<String>,
@@ -118,6 +149,14 @@ impl StepProposer for OutlineProposer {
         // just how many were proposed (this survives restarts).
         let i = ctx.history.len();
         match ctx.outline.get(i) {
+            Some(s) if s.file_edit.is_some() && (!s.satisfies.is_empty() || s.selection.is_some()) => {
+                Err("a file edit cannot claim to satisfy a criterion or pin a capability: a write is not evidence that anything works".into())
+            }
+            Some(s) if s.file_edit.is_some() => Ok(Proposal::Edit(ProposedEdit {
+                objective: s.objective.clone(),
+                edit: s.file_edit.clone().expect("checked"),
+                note: Some(format!("outline step {} of {}", i + 1, ctx.outline.len())),
+            })),
             Some(s) => Ok(Proposal::Step(ProposedStep {
                 kind: s.kind,
                 objective: s.objective.clone(),
@@ -344,6 +383,27 @@ impl ModelClient for CommandModelClient {
 }
 
 /// Everything a proposal must satisfy before the controller will plan it.
+/// Check a proposed edit's shape. Whether it matches the file as it is now is
+/// the runtime's decision when it plans the patch.
+pub fn validate_edit(e: &ProposedEdit) -> Result<(), String> {
+    if e.objective.trim().is_empty() || e.objective.len() > 500 {
+        return Err("the objective must be 1–500 characters".into());
+    }
+    cli2_core::normalize_rel_path(&e.edit.path)?;
+    cli2_core::validate_hunks(&e.edit.hunks)?;
+    if let Some(h) = &e.edit.expected_sha256 {
+        if !h.starts_with("sha256:") || h.len() != 71 {
+            return Err("expected_sha256 must be `sha256:` followed by 64 hex digits".into());
+        }
+    }
+    if let Some(n) = &e.note {
+        if n.len() > 2000 {
+            return Err("the note is too long".into());
+        }
+    }
+    Ok(())
+}
+
 pub fn validate(
     step: &ProposedStep,
     criteria: &[Criterion],

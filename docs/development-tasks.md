@@ -146,10 +146,21 @@ Whatever the strategy, the proposer cannot approve, name a command, weaken a
 criterion, or declare anything verified; invalid proposals are recorded
 (`proposal_rejected`) and three in a row block the task.
 
+## Changing files
+
+A step can be a file modification (`Proposal::Edit`, or an outline step with
+`file_edit`): a patch against a known version of a file, planned by the runtime,
+approved by digest, applied atomically and read back. It is always a `change`,
+never auto-approved, cannot claim a criterion, and invalidates earlier
+verification of any `after_changes` criterion. If the file changed after the
+proposer read it, planning is refused (`stale_patch`), the step is recorded as
+having no plan, and the next proposal must start from the file as it is now.
+See [file-edits.md](file-edits.md) for the full contract.
+
 ## What a task cannot do
 
 It cannot run anything the resolver cannot plan, anything policy forbids, or
-anything a person has not approved by digest. It does not edit files itself: a
+anything a person has not approved by digest. It does not write files itself: a
 "change" is a step that the runtime plans and runs like any other (a project
-task, or an executable with an understood interface). It has no autonomous
+task, an executable with an understood interface, or a governed file edit). It has no autonomous
 retry beyond its limits, no automatic approval, and no arbitrary-command path.

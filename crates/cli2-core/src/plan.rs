@@ -6,6 +6,7 @@ use sha2::{Digest, Sha256};
 
 use crate::capability::{CapabilityKind, EffectClass, Effects};
 use crate::check::Check;
+use crate::fileedit::FileEditStep;
 use crate::request::Constraints;
 
 pub const PLAN_SCHEMA_VERSION: &str = "cli2.plan.v1";
@@ -28,7 +29,7 @@ pub struct Candidate {
 /// One concrete process invocation. Plans never rely on a shell interpreting a
 /// concatenated command string.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct Step {
+pub struct ProcessStep {
     pub index: usize,
     pub capability_id: String,
     pub capability_fingerprint: String,
@@ -42,7 +43,7 @@ pub struct Step {
     pub working_directory: String,
 }
 
-impl Step {
+impl ProcessStep {
     pub fn argv(&self) -> Vec<String> {
         let mut v = vec![self.executable.clone()];
         v.extend(self.arguments.iter().cloned());
@@ -55,6 +56,72 @@ impl Step {
             .map(|a| shell_quote(a))
             .collect::<Vec<_>>()
             .join(" ")
+    }
+}
+
+/// One step of a plan: a process, or a governed file modification.
+///
+/// Process steps serialize exactly as they always have (no `kind`), so plans
+/// recorded before file edits existed keep their shape and their digests. A
+/// file edit carries `"kind": "file_edit"`. An unknown `kind` is refused.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Step {
+    Process(ProcessStep),
+    FileEdit(FileEditStep),
+}
+
+impl<'de> Deserialize<'de> for Step {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let value = serde_json::Value::deserialize(d)?;
+        match value.get("kind").map(|k| k.as_str()) {
+            None => serde_json::from_value(value)
+                .map(Step::Process)
+                .map_err(D::Error::custom),
+            Some(Some("file_edit")) => serde_json::from_value(value)
+                .map(Step::FileEdit)
+                .map_err(D::Error::custom),
+            Some(_) => Err(D::Error::custom("unknown plan step kind")),
+        }
+    }
+}
+
+impl Step {
+    pub fn index(&self) -> usize {
+        match self {
+            Step::Process(p) => p.index,
+            Step::FileEdit(f) => f.index,
+        }
+    }
+
+    pub fn capability_id(&self) -> &str {
+        match self {
+            Step::Process(p) => &p.capability_id,
+            Step::FileEdit(f) => &f.capability_id,
+        }
+    }
+
+    pub fn as_process(&self) -> Option<&ProcessStep> {
+        match self {
+            Step::Process(p) => Some(p),
+            Step::FileEdit(_) => None,
+        }
+    }
+
+    pub fn as_file_edit(&self) -> Option<&FileEditStep> {
+        match self {
+            Step::FileEdit(f) => Some(f),
+            Step::Process(_) => None,
+        }
+    }
+
+    /// Human display of what the step does.
+    pub fn display_command(&self) -> String {
+        match self {
+            Step::Process(p) => p.display_command(),
+            Step::FileEdit(f) => format!("edit {}", shell_quote(&f.path)),
+        }
     }
 }
 

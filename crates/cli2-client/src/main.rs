@@ -57,8 +57,14 @@ fn run(
     println!("plan {} digest {}", p.plan_id, p.digest);
     println!(
         "would run: {:?} in {}",
-        p.steps.iter().map(|s| s.argv()).collect::<Vec<_>>(),
-        p.steps[0].working_directory
+        p.steps
+            .iter()
+            .map(|s| s.display_command())
+            .collect::<Vec<_>>(),
+        p.steps[0]
+            .as_process()
+            .map(|s| s.working_directory.as_str())
+            .unwrap_or("")
     );
     if reject {
         let r = c.reject(&p.plan_id, Some("rejected by the demo"))?;

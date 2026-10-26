@@ -488,6 +488,7 @@ impl Engine {
                 .plan
                 .as_ref()
                 .and_then(|p| p.steps.first())
+                .and_then(|st| st.as_process())
                 .map(|st| st.argv());
             steps.push(ReplayStep {
                 step_id: s.step_id.clone(),

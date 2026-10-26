@@ -374,9 +374,9 @@ fn source_text_search_is_planned_from_the_verified_interface_and_gated_by_policy
     // (the tool is named in the request so lexical retrieval reaches it)
     let plan = r.plan.expect("plannable once its interface is known");
     let step = &plan.steps[0];
-    assert_eq!(step.capability_id, "executable:fsearch");
+    assert_eq!(step.capability_id(), "executable:fsearch");
     assert_eq!(
-        step.arguments,
+        step.as_process().unwrap().arguments,
         vec!["authentication"],
         "pattern bound; omitted PATH is documented as the current directory"
     );
@@ -470,8 +470,11 @@ fn filename_search_is_planned_from_a_second_verified_interface() {
     assert!(r.message.contains("pattern") || r.clarification.is_some());
     let r = run(&mut e, &proj, "find files named package", true, true, false);
     let plan = r.plan.as_ref().expect("planned");
-    assert_eq!(plan.steps[0].capability_id, "executable:fname");
-    assert_eq!(plan.steps[0].arguments, vec!["package"]);
+    assert_eq!(plan.steps[0].capability_id(), "executable:fname");
+    assert_eq!(
+        plan.steps[0].as_process().unwrap().arguments,
+        vec!["package"]
+    );
     assert_eq!(r.status, Status::Succeeded, "{r:?}");
 }
 
@@ -510,7 +513,7 @@ fn an_unsupplied_path_is_not_omitted_unless_help_says_what_omission_means() {
         false,
     );
     assert_eq!(
-        r.plan.unwrap().steps[0].arguments,
+        r.plan.unwrap().steps[0].as_process().unwrap().arguments,
         vec!["authentication", "src/index.js"]
     );
 }
@@ -551,8 +554,11 @@ fn real_rg_is_plannable_executable_and_verified_when_installed() {
         false,
     );
     let plan = r.plan.as_ref().expect("planned with real rg");
-    assert_eq!(plan.steps[0].capability_id, "executable:rg");
-    assert_eq!(plan.steps[0].arguments, vec!["authentication"]);
+    assert_eq!(plan.steps[0].capability_id(), "executable:rg");
+    assert_eq!(
+        plan.steps[0].as_process().unwrap().arguments,
+        vec!["authentication"]
+    );
     assert_eq!(plan.approval.level, ApprovalLevel::Confirm);
     assert_eq!(r.status, Status::Succeeded, "{r:?}");
 }

@@ -303,6 +303,27 @@
             "text"
           ],
           "type": "object"
+        },
+        {
+          "description": "After a file edit, the file read back from disk has exactly this\ncontent hash. It shows the edit landed as planned; it says nothing about\nwhether the change achieves anything.",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "type": {
+              "const": "file_sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path",
+            "sha256"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -418,6 +439,92 @@
       },
       "required": [
         "execution_id"
+      ],
+      "type": "object"
+    },
+    "FileEditKind": {
+      "description": "Marks a step as a file edit in JSON (process steps carry no `kind`).",
+      "enum": [
+        "file_edit"
+      ],
+      "type": "string"
+    },
+    "FileEditStep": {
+      "properties": {
+        "capability_id": {
+          "description": "Always [`FILE_EDIT_CAPABILITY_ID`].",
+          "type": "string"
+        },
+        "expected_sha256": {
+          "description": "SHA-256 (`sha256:<hex>`) of the file the patch was prepared against.\n`None` means the file must not exist and the edit creates it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hunks": {
+          "items": {
+            "$ref": "#/$defs/Hunk"
+          },
+          "type": "array"
+        },
+        "index": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/FileEditKind"
+        },
+        "path": {
+          "description": "Normalized path relative to `root`, `/`-separated.",
+          "type": "string"
+        },
+        "result_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "result_sha256": {
+          "description": "SHA-256 of the content the hunks produce from the expected content.",
+          "type": "string"
+        },
+        "root": {
+          "description": "Absolute project root. The edit can never leave it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "index",
+        "capability_id",
+        "root",
+        "path",
+        "hunks",
+        "result_sha256",
+        "result_bytes"
+      ],
+      "type": "object"
+    },
+    "Hunk": {
+      "description": "Replace `old_text` (which must match the file exactly, starting at the\n1-based line `start_line`) with `new_text`. Both are whole lines, including\ntheir line endings. An empty `old_text` inserts before `start_line`.",
+      "properties": {
+        "new_text": {
+          "type": "string"
+        },
+        "old_text": {
+          "type": "string"
+        },
+        "start_line": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start_line",
+        "old_text",
+        "new_text"
       ],
       "type": "object"
     },
@@ -551,16 +658,7 @@
       ],
       "type": "object"
     },
-    "Risk": {
-      "enum": [
-        "low",
-        "medium",
-        "high",
-        "forbidden"
-      ],
-      "type": "string"
-    },
-    "Step": {
+    "ProcessStep": {
       "description": "One concrete process invocation. Plans never rely on a shell interpreting a\nconcatenated command string.",
       "properties": {
         "arguments": {
@@ -607,6 +705,26 @@
         "working_directory"
       ],
       "type": "object"
+    },
+    "Risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "forbidden"
+      ],
+      "type": "string"
+    },
+    "Step": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProcessStep"
+        },
+        {
+          "$ref": "#/$defs/FileEditStep"
+        }
+      ],
+      "description": "One step of a plan: a process, or a governed file modification.\n\nProcess steps serialize exactly as they always have (no `kind`), so plans\nrecorded before file edits existed keep their shape and their digests. A\nfile edit carries `\"kind\": \"file_edit\"`. An unknown `kind` is refused."
     },
     "VerificationProcedure": {
       "properties": {

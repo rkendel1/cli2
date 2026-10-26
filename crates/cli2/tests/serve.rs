@@ -328,6 +328,7 @@ fn a_task_survives_a_runtime_crash_without_repeating_its_side_effect_or_claiming
         selection: None,
         bindings: Default::default(),
         satisfies: sat.iter().map(|s| s.to_string()).collect(),
+        file_edit: None,
     };
     let task = c
         .create_task(&CreateTaskParams {

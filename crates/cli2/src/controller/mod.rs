@@ -31,7 +31,7 @@
 pub mod proposer;
 pub mod state;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -39,7 +39,9 @@ use std::time::{Duration, Instant};
 
 use cli2_core::{ApprovalLevel, Capability, CapabilityKind, Check, InterfaceCompleteness};
 use cli2_protocol::devtask::*;
-use cli2_protocol::{Approvability, ErrorCode, EventsParams, Lifecycle, PlanParams};
+use cli2_protocol::{
+    Approvability, ErrorCode, EventsParams, FileReadParams, Lifecycle, PlanEditParams, PlanParams,
+};
 
 use crate::runtime::{Runtime, RuntimeError};
 use proposer::*;
@@ -910,6 +912,7 @@ impl Controller {
                 intent: s.view.intent.clone(),
                 selection: s.view.selection.clone(),
                 satisfies: s.view.satisfies.clone(),
+                file_edit: s.view.file_edit.clone(),
                 status: s.view.status,
                 detail: s.view.detail.clone(),
                 outcome: s.view.outcome.clone(),
@@ -917,6 +920,7 @@ impl Controller {
                 stderr_tail: s.stderr_tail.clone(),
             })
             .collect();
+        let files = RecordingFiles::new(&self.runtime, &m.project);
         let ctx = ProposalContext {
             task_id: &m.task_id,
             goal: &m.goal,
@@ -926,6 +930,7 @@ impl Controller {
             outline: &m.outline,
             capabilities: &briefs,
             history,
+            files: &files,
             limits: &m.limits,
             steps_used: m.steps.len() as u32,
             attempts: m.attempts,
@@ -956,8 +961,51 @@ impl Controller {
             }
             Ok(Tick::Progress)
         };
-        match proposer.propose(&ctx) {
+        let proposal = proposer.propose(&ctx);
+        // What the proposer read is part of the task's record, whatever it proposed.
+        files.record(self, j, &m.task_id)?;
+        match proposal {
             Err(e) => reject(e),
+            Ok(Proposal::Edit(edit)) => {
+                if let Err(reason) = validate_edit(&edit) {
+                    return reject(reason);
+                }
+                let __c = self.cell(&m.task_id);
+                let _g = __c.op.lock().unwrap();
+                let fresh = self.load(j, &m.task_id)?;
+                if fresh.state.is_terminal()
+                    || fresh.cancel_requested.is_some()
+                    || fresh.steps.len() != m.steps.len()
+                {
+                    return Ok(Tick::Progress);
+                }
+                let index = fresh.steps.len() as u32 + 1;
+                let path = cli2_core::normalize_rel_path(&edit.edit.path)
+                    .expect("validated by validate_edit");
+                let mut edit_spec = edit.edit;
+                edit_spec.path = path.clone();
+                self.append(
+                    j,
+                    &m.task_id,
+                    DevTaskEventData::StepProposed {
+                        step_id: format!("s{index}"),
+                        index,
+                        kind: StepKind::Change,
+                        objective: edit.objective.clone(),
+                        intent: format!("Edit {path}: {}", edit.objective)
+                            .chars()
+                            .take(1000)
+                            .collect(),
+                        selection: None,
+                        bindings: BTreeMap::new(),
+                        satisfies: vec![],
+                        file_edit: Some(edit_spec),
+                        note: edit.note,
+                        source,
+                    },
+                )?;
+                Ok(Tick::Progress)
+            }
             Ok(Proposal::GiveUp { reason }) => {
                 let __c = self.cell(&m.task_id);
                 let _g = __c.op.lock().unwrap();
@@ -1015,6 +1063,7 @@ impl Controller {
                         selection: step.selection,
                         bindings: step.bindings,
                         satisfies: step.satisfies,
+                        file_edit: None,
                         note: step.note,
                         source,
                     },
@@ -1035,18 +1084,32 @@ impl Controller {
                 }
             }
         }
-        let planned = self.runtime.plan(PlanParams {
-            project: m.project.clone(),
-            intent: step.view.intent.clone(),
-            idempotency_key: Some(format!("{}:{}", m.task_id, step.view.step_id)),
-            constraints: Default::default(),
-            bindings: step.bindings.clone(),
-            selection: step.view.selection.clone(),
-            expectations,
-            capture_help: false,
-            resolver: None,
-            timeout_secs: None,
-        });
+        let key = Some(format!("{}:{}", m.task_id, step.view.step_id));
+        let planned = match &step.view.file_edit {
+            // A patch is planned from exactly what was proposed; there is no
+            // capability search and no way to attach criteria checks to it.
+            Some(edit) => self.runtime.plan_edit(PlanEditParams {
+                project: m.project.clone(),
+                path: edit.path.clone(),
+                expected_sha256: edit.expected_sha256.clone(),
+                hunks: edit.hunks.clone(),
+                intent: Some(step.view.intent.clone()),
+                idempotency_key: key,
+                constraints: Default::default(),
+            }),
+            None => self.runtime.plan(PlanParams {
+                project: m.project.clone(),
+                intent: step.view.intent.clone(),
+                idempotency_key: key,
+                constraints: Default::default(),
+                bindings: step.bindings.clone(),
+                selection: step.view.selection.clone(),
+                expectations,
+                capture_help: false,
+                resolver: None,
+                timeout_secs: None,
+            }),
+        };
         let __c = self.cell(&m.task_id);
         let _g = __c.op.lock().unwrap();
         let fresh = self.load(j, &m.task_id)?;
@@ -1447,6 +1510,64 @@ fn briefs(caps: &[Capability]) -> Vec<CapabilityBrief> {
         .collect();
     v.sort_by(|a, b| a.id.cmp(&b.id));
     v
+}
+
+/// The proposer's window onto project files: reads through the runtime (so the
+/// same containment rules apply as for edits) and remembers what was read so it
+/// can be journaled.
+struct RecordingFiles<'a> {
+    runtime: &'a Runtime,
+    project: &'a str,
+    read: Mutex<Vec<(String, String, u64)>>,
+}
+
+impl<'a> RecordingFiles<'a> {
+    fn new(runtime: &'a Runtime, project: &'a str) -> Self {
+        Self {
+            runtime,
+            project,
+            read: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn record(&self, c: &Controller, j: &cli2_evidence::Journal, task_id: &str) -> Result<()> {
+        let reads = std::mem::take(&mut *self.read.lock().unwrap());
+        for (path, sha256, bytes) in reads {
+            c.append(
+                j,
+                task_id,
+                DevTaskEventData::FileRead {
+                    path,
+                    sha256,
+                    bytes,
+                },
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl ProjectFiles for RecordingFiles<'_> {
+    fn read(&self, path: &str) -> std::result::Result<FileContent, String> {
+        let r = self
+            .runtime
+            .read_file(&FileReadParams {
+                project: self.project.to_string(),
+                path: path.to_string(),
+            })
+            .map_err(|e| e.message)?;
+        self.read
+            .lock()
+            .unwrap()
+            .push((r.path.clone(), r.sha256.clone(), r.bytes));
+        Ok(FileContent {
+            path: r.path,
+            sha256: r.sha256,
+            bytes: r.bytes,
+            lines: r.lines,
+            content: r.content,
+        })
+    }
 }
 
 /// `controller.model_command` in config.json: a local program used as the model.

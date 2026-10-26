@@ -150,6 +150,20 @@ impl Default for Limits {
     }
 }
 
+/// A patch to one file, against a known version. It is a *request*: the
+/// runtime plans it, a person approves the exact plan, and the runtime applies it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FileEditSpec {
+    /// Relative to the project root.
+    pub path: String,
+    /// `sha256` of the version the hunks were prepared against (from a file
+    /// read). Omit to create a file that must not exist yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_sha256: Option<String>,
+    pub hunks: Vec<cli2_core::Hunk>,
+}
+
 /// One step of a client-supplied outline (the deterministic `outline` strategy).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -165,6 +179,11 @@ pub struct OutlineStep {
     /// Criteria this step is meant to satisfy.
     #[serde(default)]
     pub satisfies: Vec<String>,
+    /// A file modification. Such a step is always a `change`, has no
+    /// `selection` and cannot claim to satisfy a criterion: a write is not
+    /// evidence that anything works.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_edit: Option<FileEditSpec>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -270,6 +289,9 @@ pub struct StepView {
     pub intent: String,
     pub selection: Option<String>,
     pub satisfies: Vec<String>,
+    /// The patch, for a file-modification step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_edit: Option<FileEditSpec>,
     pub status: StepStatus,
     pub plan_id: Option<String>,
     pub request_id: Option<String>,
@@ -440,9 +462,18 @@ pub enum DevTaskEventData {
         selection: Option<String>,
         bindings: BTreeMap<String, String>,
         satisfies: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        file_edit: Option<FileEditSpec>,
         /// Non-authoritative free text from the proposer.
         note: Option<String>,
         source: String,
+    },
+    /// The proposer read a project file (recorded so a reviewer can see what
+    /// the patch was prepared from).
+    FileRead {
+        path: String,
+        sha256: String,
+        bytes: u64,
     },
     /// A proposal the controller refused (fabricated capability, unknown
     /// criterion, over a limit, malformed).

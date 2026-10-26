@@ -149,6 +149,7 @@ fn apply(m: &mut Model, e: &DevTaskEvent) {
             selection,
             bindings,
             satisfies,
+            file_edit,
             note,
             ..
         } => {
@@ -162,6 +163,7 @@ fn apply(m: &mut Model, e: &DevTaskEvent) {
                     intent: intent.clone(),
                     selection: selection.clone(),
                     satisfies: satisfies.clone(),
+                    file_edit: file_edit.clone(),
                     status: StepStatus::Proposed,
                     plan_id: None,
                     request_id: None,
@@ -183,6 +185,7 @@ fn apply(m: &mut Model, e: &DevTaskEvent) {
             });
         }
         D::ProposalRejected { .. } => m.consecutive_rejections += 1,
+        D::FileRead { .. } => {}
         D::PlanMade {
             step_id,
             plan_id,
@@ -539,6 +542,7 @@ mod tests {
                 intent: id.into(),
                 selection: None,
                 satisfies: satisfies.iter().map(|s| s.to_string()).collect(),
+                file_edit: None,
                 status: StepStatus::Executed,
                 plan_id: None,
                 request_id: None,

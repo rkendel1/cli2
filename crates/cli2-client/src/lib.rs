@@ -325,6 +325,22 @@ impl Client {
         )
     }
 
+    /// Read a project file; the returned `sha256` identifies the version a patch applies to.
+    pub fn read_file(&mut self, project: &str, path: &str) -> Result<FileReadResult, ClientError> {
+        self.call(
+            ops::FILE_READ,
+            &FileReadParams {
+                project: project.into(),
+                path: path.into(),
+            },
+        )
+    }
+
+    /// Plan a patch to one file. Nothing is written until the plan is approved by digest and started.
+    pub fn plan_edit(&mut self, params: &PlanEditParams) -> Result<PlanResult, ClientError> {
+        self.call(ops::PLAN_EDIT, params)
+    }
+
     pub fn history_search(
         &mut self,
         project: &str,

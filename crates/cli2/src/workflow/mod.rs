@@ -278,7 +278,17 @@ fn step_record(
     let started: Vec<&StepResult> = started_steps(r).collect();
     // The step that supports the outcome: the last one that ran.
     let ran = started.last().copied();
-    let planned = plan.as_ref().and_then(|p| p.steps.first());
+    // A file edit is a one-off change, never a replayable workflow step.
+    if plan
+        .as_ref()
+        .is_some_and(|p| p.steps.iter().any(|s| s.as_file_edit().is_some()))
+    {
+        return None;
+    }
+    let planned = plan
+        .as_ref()
+        .and_then(|p| p.steps.first())
+        .and_then(|s| s.as_process());
     let mut argv = Vec::new();
     if let Some(s) = ran {
         argv.push(

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "bytes": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "content": {
+      "type": "string"
+    },
+    "lines": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "path": {
+      "type": "string"
+    },
+    "sha256": {
+      "description": "The version identifier: pass it as `expected_sha256` when proposing an edit.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path",
+    "sha256",
+    "bytes",
+    "lines",
+    "content"
+  ],
+  "title": "FileReadResult",
+  "type": "object"
+}

@@ -39,7 +39,7 @@ fn deterministic_cases_work_without_an_inference_provider() {
     let r = plan(&mut e, &proj, "build the artifact");
     assert_eq!(r.status, Status::Planned);
     assert_eq!(
-        r.plan.unwrap().steps[0].capability_id,
+        r.plan.unwrap().steps[0].capability_id(),
         "project-task:make:build"
     );
 }
@@ -99,9 +99,12 @@ fn a_ranker_can_reorder_but_cannot_construct_invocations_or_grant_authority() {
     // Whatever it picked, the invocation comes from the discovered interface
     // and the approval requirement from runtime policy.
     let step = &p.steps[0];
-    assert_ne!(step.arguments, vec!["-rf".to_string(), "/".to_string()]);
-    assert_eq!(step.executable, "make");
-    if step.capability_id == "project-task:make:clean" {
+    assert_ne!(
+        step.as_process().unwrap().arguments,
+        vec!["-rf".to_string(), "/".to_string()]
+    );
+    assert_eq!(step.as_process().unwrap().executable, "make");
+    if step.capability_id() == "project-task:make:clean" {
         assert_eq!(p.approval.level, cli2_core::ApprovalLevel::Explicit);
     }
     assert!(p

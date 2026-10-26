@@ -456,11 +456,12 @@ impl Journal {
                 if step.termination == cli2_core::Termination::NotStarted {
                     continue;
                 }
-                let fp = plan
-                    .steps
-                    .get(step.index)
-                    .map(|s| s.capability_fingerprint.clone())
-                    .unwrap_or_default();
+                // Only capabilities that are discovered and fingerprinted have a
+                // history; a file edit is a one-off change, not a capability.
+                let Some(cli2_core::Step::Process(planned)) = plan.steps.get(step.index) else {
+                    continue;
+                };
+                let fp = planned.capability_fingerprint.clone();
                 self.conn.execute(
                     "INSERT INTO observations(capability_id, capability_fingerprint, request_id, plan_id, succeeded, recorded_at)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6)",

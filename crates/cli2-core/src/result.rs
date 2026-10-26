@@ -76,6 +76,10 @@ pub enum Termination {
     SpawnFailed,
     /// The step was not started (an earlier step failed or the plan was blocked).
     NotStarted,
+    /// A file edit was committed.
+    Applied,
+    /// A file edit was refused or failed; see the step's `file_edit` outcome.
+    Refused,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -106,11 +110,20 @@ pub struct StepResult {
     pub stderr_truncated: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// What happened to the file, for file-edit steps.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_edit: Option<Box<crate::fileedit::FileEditOutcome>>,
 }
 
 impl StepResult {
+    /// Whether the step did what it was asked: the process exited 0, or the
+    /// file edit was committed and read back as planned. Neither establishes
+    /// that the task succeeded; verification does.
     pub fn process_succeeded(&self) -> bool {
-        self.termination == Termination::Exited && self.exit_code == Some(0)
+        match &self.file_edit {
+            Some(o) => self.termination == Termination::Applied && o.applied(),
+            None => self.termination == Termination::Exited && self.exit_code == Some(0),
+        }
     }
 }
 

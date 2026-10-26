@@ -248,7 +248,7 @@ fn planning_never_executes_and_returns_the_complete_plan() {
     assert_eq!(r.outcome.status, cli2_core::Status::Planned);
     assert_eq!(r.approvability, Approvability::RequiresApproval);
     let p = r.outcome.plan.unwrap();
-    assert_eq!(p.steps[0].argv(), ["make", "hello"]);
+    assert_eq!(p.steps[0].as_process().unwrap().argv(), ["make", "hello"]);
     assert!(p.digest.starts_with("sha256:") && p.plan_id.starts_with("plan_"));
     assert!(
         !p.limitations.is_empty(),
@@ -1081,8 +1081,8 @@ fn a_minimal_client_can_do_the_whole_journey_without_terminal_text() {
     let p = plan.outcome.plan.clone().unwrap();
     let shown = format!(
         "{:?} in {} (needs {:?}, digest {})",
-        p.steps[0].argv(),
-        p.steps[0].working_directory,
+        p.steps[0].as_process().unwrap().argv(),
+        p.steps[0].as_process().unwrap().working_directory,
         plan.required_approval.unwrap(),
         &p.digest[..19]
     );
@@ -1431,4 +1431,109 @@ fn development_task_messages_conform_to_their_published_schemas() {
         "invalid_params"
     );
     let _: TaskView = serde_json::from_value(send("devtask.get", json!({"task_id": id}))).unwrap();
+}
+
+#[test]
+fn file_operations_work_over_the_wire_and_conform_to_their_published_schemas() {
+    let rig = Rig::new();
+    std::fs::write(rig.project.join("notes.txt"), "one\ntwo\n").unwrap();
+    let proj = rig.proj();
+    let mut s = UnixStream::connect(&rig.socket).unwrap();
+    let mut r = BufReader::new(s.try_clone().unwrap());
+    let mut send = |op: &str, params: Value| -> Value {
+        let req = json!({"id": "x", "op": op, "params": params});
+        validate("request", &req);
+        s.write_all(format!("{req}\n").as_bytes()).unwrap();
+        let mut line = String::new();
+        r.read_line(&mut line).unwrap();
+        let resp: Value = serde_json::from_str(&line).unwrap();
+        validate("response", &resp);
+        if resp["ok"] == true {
+            resp["result"].clone()
+        } else {
+            validate("error", &resp["error"]);
+            resp["error"].clone()
+        }
+    };
+    let hello = send(
+        "hello",
+        json!({"client": {"name": "schema"}, "versions": [1]}),
+    );
+    let ops = hello["operations"].as_array().unwrap();
+    for op in ["file.read", "plan.edit"] {
+        assert!(ops.iter().any(|o| o == op), "hello advertises {op}");
+    }
+
+    let read_params = json!({"project": proj, "path": "notes.txt"});
+    validate("file.read.params", &read_params);
+    let read = send("file.read", read_params);
+    validate("file.read.result", &read);
+    assert_eq!(read["content"], "one\ntwo\n");
+
+    let edit = json!({
+        "project": proj, "path": "notes.txt", "expected_sha256": read["sha256"],
+        "hunks": [{"start_line": 2, "old_text": "two\n", "new_text": "TWO\n"}],
+        "intent": "capitalize", "idempotency_key": "wire-1"
+    });
+    validate("plan.edit.params", &edit);
+    let planned = send("plan.edit", edit.clone());
+    validate("intent.plan.result", &planned);
+    let plan = &planned["outcome"]["plan"];
+    assert_eq!(plan["steps"][0]["kind"], "file_edit");
+    assert_eq!(plan["steps"][0]["path"], "notes.txt");
+    assert_ne!(planned["approvability"], "not_required");
+    assert_eq!(
+        std::fs::read_to_string(rig.project.join("notes.txt")).unwrap(),
+        "one\ntwo\n",
+        "planning writes nothing"
+    );
+    // The same request repeats as the same plan.
+    let again = send("plan.edit", edit);
+    assert_eq!(again["deduplicated"], true);
+    assert_eq!(again["outcome"]["plan"]["plan_id"], plan["plan_id"]);
+
+    let view = send("plan.get", json!({"plan_id": plan["plan_id"]}));
+    validate("plan.get.result", &view);
+    let approved = send(
+        "plan.approve",
+        json!({"plan_id": plan["plan_id"], "plan_digest": plan["digest"]}),
+    );
+    validate("plan.approve.result", &approved);
+    let started = send(
+        "execution.start",
+        json!({"plan_id": plan["plan_id"], "approval_id": approved["approval"]["approval_id"]}),
+    );
+    validate("execution.start.result", &started);
+    let t = std::time::Instant::now();
+    let done = loop {
+        let snap = send(
+            "execution.get",
+            json!({"execution_id": started["execution_id"]}),
+        );
+        validate("execution.get.result", &snap);
+        if snap["lifecycle"] == "finished" {
+            break snap;
+        }
+        assert!(t.elapsed() < Duration::from_secs(20));
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(done["task_status"], "succeeded");
+    assert_eq!(done["steps"][0]["file_edit"]["status"], "applied");
+    assert_eq!(
+        std::fs::read_to_string(rig.project.join("notes.txt")).unwrap(),
+        "one\nTWO\n"
+    );
+
+    // A patch for the old version is refused with a specific error code.
+    let stale = send(
+        "plan.edit",
+        json!({
+            "project": proj, "path": "notes.txt", "expected_sha256": read["sha256"],
+            "hunks": [{"start_line": 1, "old_text": "one\n", "new_text": "1\n"}]
+        }),
+    );
+    assert_eq!(stale["code"], "stale_patch");
+    // And a path outside the project is not a thing.
+    let escape = send("file.read", json!({"project": proj, "path": "../outside"}));
+    assert_eq!(escape["code"], "invalid_params");
 }

@@ -31,8 +31,8 @@ pub mod devtask;
 use std::collections::BTreeMap;
 
 use cli2_core::{
-    ApprovalLevel, ApprovalRecord, Capability, Check, Constraints, ExecutionResult, Plan, Status,
-    StepResult, Termination, Verification, VerificationStatus,
+    ApprovalLevel, ApprovalRecord, Capability, Check, Constraints, ExecutionResult, Hunk, Plan,
+    Status, StepResult, Termination, Verification, VerificationStatus,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -110,6 +110,8 @@ pub mod ops {
     pub const HISTORY_SEARCH: &str = "history.search";
     pub const WORKFLOW_GET: &str = "workflow.get";
     pub const WORKFLOW_REPLAN: &str = "workflow.replan";
+    pub const FILE_READ: &str = "file.read";
+    pub const PLAN_EDIT: &str = "plan.edit";
     pub const DEVTASK_CREATE: &str = "devtask.create";
     pub const DEVTASK_GET: &str = "devtask.get";
     pub const DEVTASK_LIST: &str = "devtask.list";
@@ -142,6 +144,8 @@ pub mod ops {
         HISTORY_SEARCH,
         WORKFLOW_GET,
         WORKFLOW_REPLAN,
+        FILE_READ,
+        PLAN_EDIT,
         DEVTASK_CREATE,
         DEVTASK_GET,
         DEVTASK_LIST,
@@ -190,6 +194,8 @@ pub enum ErrorCode {
     AlreadyExecuted,
     /// The request conflicts with current state (e.g. an idempotency key reused with different inputs).
     Conflict,
+    /// A file edit was prepared against a version of the file that is no longer current.
+    StalePatch,
     /// The runtime is at capacity; retry later.
     Busy,
     Internal,
@@ -309,6 +315,48 @@ pub struct PlanParams {
     /// Bound each process of the plan to this many seconds (1–3600).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_secs: Option<u64>,
+}
+
+/// Read one text file of a project. Reads are bounded and follow the same
+/// containment rules as edits: no symbolic links, regular files only.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FileReadParams {
+    pub project: String,
+    /// Relative to the project root.
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FileReadResult {
+    pub path: String,
+    /// The version identifier: pass it as `expected_sha256` when proposing an edit.
+    pub sha256: String,
+    pub bytes: u64,
+    pub lines: u64,
+    pub content: String,
+}
+
+/// Plan a modification of one file as a patch against a known version.
+/// Nothing is written until the returned plan is approved by digest and started.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PlanEditParams {
+    pub project: String,
+    pub path: String,
+    /// `sha256` of the file as it was when the patch was prepared (from
+    /// `file.read`). Omit to create a file that must not exist yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_sha256: Option<String>,
+    pub hunks: Vec<Hunk>,
+    /// Why; shown to the approver. Defaults to `Edit <path>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
+    /// Retrying with the same key (and same inputs) returns the same plan.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
+    #[serde(default)]
+    pub constraints: Constraints,
 }
 
 /// What approval a plan needs before it may run.
@@ -537,7 +585,7 @@ pub enum EventData {
         bytes: usize,
     },
     StepFinished {
-        result: StepResult,
+        result: Box<StepResult>,
     },
     Verification {
         verification: Verification,
@@ -646,6 +694,9 @@ pub fn schemas() -> Vec<(&'static str, Value)> {
         ("capabilities.list.result", s::<CapabilitiesResult>()),
         ("intent.plan.params", s::<PlanParams>()),
         ("intent.plan.result", s::<PlanResult>()),
+        ("file.read.params", s::<FileReadParams>()),
+        ("file.read.result", s::<FileReadResult>()),
+        ("plan.edit.params", s::<PlanEditParams>()),
         ("plan.get.params", s::<PlanIdParams>()),
         ("plan.get.result", s::<PlanView>()),
         ("plan.approve.params", s::<ApproveParams>()),

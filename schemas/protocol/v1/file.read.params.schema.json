@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Read one text file of a project. Reads are bounded and follow the same\ncontainment rules as edits: no symbolic links, regular files only.",
+  "properties": {
+    "path": {
+      "description": "Relative to the project root.",
+      "type": "string"
+    },
+    "project": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "project",
+    "path"
+  ],
+  "title": "FileReadParams",
+  "type": "object"
+}

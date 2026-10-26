@@ -272,6 +272,27 @@
             "text"
           ],
           "type": "object"
+        },
+        {
+          "description": "After a file edit, the file read back from disk has exactly this\ncontent hash. It shows the edit landed as planned; it says nothing about\nwhether the change achieves anything.",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "type": {
+              "const": "file_sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path",
+            "sha256"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -735,6 +756,187 @@
       ],
       "type": "object"
     },
+    "FileEditKind": {
+      "description": "Marks a step as a file edit in JSON (process steps carry no `kind`).",
+      "enum": [
+        "file_edit"
+      ],
+      "type": "string"
+    },
+    "FileEditOutcome": {
+      "description": "What actually happened to the file. Recorded as evidence for the step.",
+      "properties": {
+        "after_sha256": {
+          "description": "Hash read back from disk after the commit.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "before_sha256": {
+          "description": "Hash of the file as found when the edit was attempted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bytes_after": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "bytes_before": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "expected_sha256": {
+          "description": "Hash the patch was prepared against.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "planned_sha256": {
+          "description": "Hash the plan said the result would have.",
+          "type": "string"
+        },
+        "root": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/FileEditStatus"
+        }
+      },
+      "required": [
+        "status",
+        "path",
+        "root",
+        "planned_sha256",
+        "message"
+      ],
+      "type": "object"
+    },
+    "FileEditStatus": {
+      "oneOf": [
+        {
+          "const": "applied",
+          "description": "The planned content was committed and read back as planned.",
+          "type": "string"
+        },
+        {
+          "const": "stale",
+          "description": "The target no longer had the content the patch was prepared against.\nNothing was changed.",
+          "type": "string"
+        },
+        {
+          "const": "refused",
+          "description": "Refused or failed without changing the target (unsafe path, not a\nregular file, platform cannot make the commit safe, I/O error, ...).",
+          "type": "string"
+        },
+        {
+          "const": "conflict",
+          "description": "A change landed concurrently while the edit was being committed. The\nprevious version was restored where that was safe; see `message`.",
+          "type": "string"
+        },
+        {
+          "const": "mismatch",
+          "description": "The edit was committed but reading it back did not give the planned\ncontent. The target needs attention.",
+          "type": "string"
+        }
+      ]
+    },
+    "FileEditStep": {
+      "properties": {
+        "capability_id": {
+          "description": "Always [`FILE_EDIT_CAPABILITY_ID`].",
+          "type": "string"
+        },
+        "expected_sha256": {
+          "description": "SHA-256 (`sha256:<hex>`) of the file the patch was prepared against.\n`None` means the file must not exist and the edit creates it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hunks": {
+          "items": {
+            "$ref": "#/$defs/Hunk"
+          },
+          "type": "array"
+        },
+        "index": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/FileEditKind"
+        },
+        "path": {
+          "description": "Normalized path relative to `root`, `/`-separated.",
+          "type": "string"
+        },
+        "result_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "result_sha256": {
+          "description": "SHA-256 of the content the hunks produce from the expected content.",
+          "type": "string"
+        },
+        "root": {
+          "description": "Absolute project root. The edit can never leave it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "index",
+        "capability_id",
+        "root",
+        "path",
+        "hunks",
+        "result_sha256",
+        "result_bytes"
+      ],
+      "type": "object"
+    },
+    "Hunk": {
+      "description": "Replace `old_text` (which must match the file exactly, starting at the\n1-based line `start_line`) with `new_text`. Both are whole lines, including\ntheir line endings. An empty `old_text` inserts before `start_line`.",
+      "properties": {
+        "new_text": {
+          "type": "string"
+        },
+        "old_text": {
+          "type": "string"
+        },
+        "start_line": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start_line",
+        "old_text",
+        "new_text"
+      ],
+      "type": "object"
+    },
     "NetworkConstraint": {
       "oneOf": [
         {
@@ -873,6 +1075,54 @@
       ],
       "type": "string"
     },
+    "ProcessStep": {
+      "description": "One concrete process invocation. Plans never rely on a shell interpreting a\nconcatenated command string.",
+      "properties": {
+        "arguments": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "capability_fingerprint": {
+          "type": "string"
+        },
+        "capability_id": {
+          "type": "string"
+        },
+        "executable": {
+          "description": "Executable name as known to the capability interface.",
+          "type": "string"
+        },
+        "executable_fingerprint": {
+          "description": "Fingerprint of the executable file at planning time.",
+          "type": "string"
+        },
+        "index": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "resolved_executable": {
+          "description": "Absolute path that will actually be executed.",
+          "type": "string"
+        },
+        "working_directory": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "capability_id",
+        "capability_fingerprint",
+        "executable",
+        "resolved_executable",
+        "executable_fingerprint",
+        "arguments",
+        "working_directory"
+      ],
+      "type": "object"
+    },
     "Risk": {
       "enum": [
         "low",
@@ -932,52 +1182,15 @@
       ]
     },
     "Step": {
-      "description": "One concrete process invocation. Plans never rely on a shell interpreting a\nconcatenated command string.",
-      "properties": {
-        "arguments": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProcessStep"
         },
-        "capability_fingerprint": {
-          "type": "string"
-        },
-        "capability_id": {
-          "type": "string"
-        },
-        "executable": {
-          "description": "Executable name as known to the capability interface.",
-          "type": "string"
-        },
-        "executable_fingerprint": {
-          "description": "Fingerprint of the executable file at planning time.",
-          "type": "string"
-        },
-        "index": {
-          "format": "uint",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "resolved_executable": {
-          "description": "Absolute path that will actually be executed.",
-          "type": "string"
-        },
-        "working_directory": {
-          "type": "string"
+        {
+          "$ref": "#/$defs/FileEditStep"
         }
-      },
-      "required": [
-        "index",
-        "capability_id",
-        "capability_fingerprint",
-        "executable",
-        "resolved_executable",
-        "executable_fingerprint",
-        "arguments",
-        "working_directory"
       ],
-      "type": "object"
+      "description": "One step of a plan: a process, or a governed file modification.\n\nProcess steps serialize exactly as they always have (no `kind`), so plans\nrecorded before file edits existed keep their shape and their digests. A\nfile edit carries `\"kind\": \"file_edit\"`. An unknown `kind` is refused."
     },
     "StepResult": {
       "properties": {
@@ -1011,6 +1224,17 @@
             "integer",
             "null"
           ]
+        },
+        "file_edit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FileEditOutcome"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What happened to the file, for file-edit steps."
         },
         "finished_at": {
           "type": "string"
@@ -1127,6 +1351,16 @@
         {
           "const": "not_started",
           "description": "The step was not started (an earlier step failed or the plan was blocked).",
+          "type": "string"
+        },
+        {
+          "const": "applied",
+          "description": "A file edit was committed.",
+          "type": "string"
+        },
+        {
+          "const": "refused",
+          "description": "A file edit was refused or failed; see the step's `file_edit` outcome.",
           "type": "string"
         }
       ]

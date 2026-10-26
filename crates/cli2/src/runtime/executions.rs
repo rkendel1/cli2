@@ -284,6 +284,9 @@ pub struct EventSink(pub Arc<Execution>);
 
 impl ExecutionObserver for EventSink {
     fn step_started(&self, step: &Step, pid: u32) {
+        let Some(step) = step.as_process() else {
+            return;
+        };
         self.0.push(EventData::StepStarted {
             index: step.index,
             capability_id: step.capability_id.clone(),
@@ -301,7 +304,7 @@ impl ExecutionObserver for EventSink {
         st.steps.push(result.clone());
         drop(st);
         self.0.push(EventData::StepFinished {
-            result: result.clone(),
+            result: Box::new(result.clone()),
         });
     }
     fn verification(&self, v: &Verification) {
