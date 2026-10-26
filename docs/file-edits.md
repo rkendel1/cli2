@@ -127,5 +127,5 @@ with `execution.get` / `execution.events`, exactly as for any plan.
 
 In development tasks a strategy reads files through `ProposalContext::files` (every
 read is recorded as a `file_read` task event), returns `Proposal::Edit`, and an
-outline step may carry a `file_edit`. Model-driven proposals of edits arrive with
-the inference adapter; the current strict model reply format has no `file_edit` field.
+outline step may carry a `file_edit`. A model proposes edits through the
+`edit_file` action of the strict reply contract; see [inference.md](inference.md).

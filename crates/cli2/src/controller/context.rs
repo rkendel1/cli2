@@ -1568,7 +1568,7 @@ pub fn gather(rt: &Runtime, m: &Model, b: &ContextBudget) -> Gathered {
     }
 }
 
-fn task_role(name: &str) -> &'static str {
+pub fn task_role(name: &str) -> &'static str {
     let n = name.to_ascii_lowercase();
     if n.contains("test") || n.contains("check") || n.contains("spec") {
         "test"
@@ -1809,6 +1809,7 @@ mod tests {
                 file_edit: edit,
                 note: note.map(String::from),
                 source: "scripted".into(),
+                origin: None,
             });
         }
 

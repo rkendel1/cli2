@@ -150,6 +150,84 @@ impl Default for Limits {
     }
 }
 
+/// What became of one attempted call to an inference backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InferenceOutcome {
+    /// A response was received and validated.
+    Success,
+    /// The call exceeded its deadline. Says nothing about whether anything happened.
+    Timeout,
+    Cancelled,
+    /// The endpoint could not complete the request (refused, reset, HTTP error).
+    TransportError,
+    /// A response arrived but failed schema or semantic validation.
+    InvalidResponse,
+    /// The task has no inference-call budget left; no call was made.
+    BudgetExhausted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TokenUsage {
+    pub prompt: u64,
+    pub completion: u64,
+    pub total: u64,
+}
+
+/// Bounded metadata about one attempted inference call. Never the prompt, the
+/// response text, or any credential: those are identified by digest only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InferenceCallInfo {
+    /// Correlates the calls made for one proposal (stable for identical inputs).
+    pub request_id: String,
+    /// `<request_id>.r<read round>.t<retry>`
+    pub call_id: String,
+    /// 1-based position among this task's attempted calls.
+    pub call_index: u32,
+    /// Which re-ask this is after an invalid response (0 = first).
+    pub retry: u32,
+    /// Which read round within the proposal (0 = the first question).
+    pub round: u32,
+    pub provider: String,
+    pub model: String,
+    /// Scheme, host, port and path of the endpoint. No credentials.
+    pub endpoint: String,
+    /// Digest of the context snapshot the request was built from.
+    pub context_digest: String,
+    pub request_bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_digest: Option<String>,
+    pub response_bytes: u64,
+    pub started_at: String,
+    pub duration_ms: u64,
+    pub outcome: InferenceOutcome,
+    /// For `invalid_response`: a bounded summary of why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation: Option<String>,
+    /// For failures: a bounded description.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<TokenUsage>,
+}
+
+/// How a validated proposal was produced. A reference to evidence, not evidence
+/// that the proposal is right.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ProposalOrigin {
+    pub request_id: String,
+    /// The call whose response became this proposal.
+    pub call_id: String,
+    pub provider: String,
+    pub model: String,
+    /// Criteria the proposer said this is meant to advance (a claim).
+    pub advances: Vec<String>,
+    /// Context items the proposer cited (each exists in the context it was given).
+    pub evidence: Vec<String>,
+}
+
 /// One path in `git status --porcelain` output.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct TreeEntry {
@@ -325,6 +403,9 @@ pub struct StepView {
     pub outcome: Option<StepOutcome>,
     /// Non-authoritative text from the proposer.
     pub proposer_note: Option<String>,
+    /// How a model-made proposal was produced.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<ProposalOrigin>,
     pub detail: Option<String>,
 }
 
@@ -489,6 +570,13 @@ pub enum DevTaskEventData {
         /// Non-authoritative free text from the proposer.
         note: Option<String>,
         source: String,
+        /// How a model-made proposal was produced (absent for scripted ones).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<ProposalOrigin>,
+    },
+    /// One attempted call to an inference backend (see [`InferenceCallInfo`]).
+    InferenceCall {
+        call: InferenceCallInfo,
     },
     /// The proposer read a project file (recorded so a reviewer can see what
     /// the patch was prepared from).

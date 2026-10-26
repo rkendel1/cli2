@@ -834,6 +834,47 @@
       ],
       "type": "object"
     },
+    "ProposalOrigin": {
+      "description": "How a validated proposal was produced. A reference to evidence, not evidence\nthat the proposal is right.",
+      "properties": {
+        "advances": {
+          "description": "Criteria the proposer said this is meant to advance (a claim).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "call_id": {
+          "description": "The call whose response became this proposal.",
+          "type": "string"
+        },
+        "evidence": {
+          "description": "Context items the proposer cited (each exists in the context it was given).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "call_id",
+        "provider",
+        "model",
+        "advances",
+        "evidence"
+      ],
+      "type": "object"
+    },
     "ReportOutcome": {
       "oneOf": [
         {
@@ -1098,6 +1139,17 @@
         },
         "objective": {
           "type": "string"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProposalOrigin"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How a model-made proposal was produced."
         },
         "outcome": {
           "anyOf": [

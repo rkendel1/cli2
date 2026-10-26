@@ -140,6 +140,9 @@ The proposer is behind `StepProposer` (Rust) and selected by `strategy`:
   (`{"controller": {"model_command": ["/path/to/program", "args"], "model_timeout_secs": 60}}`)
   runs a local program with the request on stdin and the reply on stdout; cli2
   does not serve models itself.
+* **Inference-backed `model`:** when `controller.inference` is configured, `model` asks a
+  local OpenAI-compatible endpoint through the strict `cli2.model_reply.v1` contract,
+  which includes file edits. See [inference.md](inference.md).
 * Applications can register their own with `Controller::register_strategy`.
 
 Whatever the strategy, the proposer cannot approve, name a command, weaken a
