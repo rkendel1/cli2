@@ -401,6 +401,17 @@
             "objective": {
               "type": "string"
             },
+            "origin": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ProposalOrigin"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "How a model-made proposal was produced (absent for scripted ones)."
+            },
             "satisfies": {
               "items": {
                 "type": "string"
@@ -434,6 +445,23 @@
             "bindings",
             "satisfies",
             "source"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "One attempted call to an inference backend (see [`InferenceCallInfo`]).",
+          "properties": {
+            "call": {
+              "$ref": "#/$defs/InferenceCallInfo"
+            },
+            "type": {
+              "const": "inference_call",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "call"
           ],
           "type": "object"
         },
@@ -966,6 +994,164 @@
       ],
       "type": "object"
     },
+    "InferenceCallInfo": {
+      "description": "Bounded metadata about one attempted inference call. Never the prompt, the\nresponse text, or any credential: those are identified by digest only.",
+      "properties": {
+        "call_id": {
+          "description": "`<request_id>.r<read round>.t<retry>`",
+          "type": "string"
+        },
+        "call_index": {
+          "description": "1-based position among this task's attempted calls.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "context_digest": {
+          "description": "Digest of the context snapshot the request was built from.",
+          "type": "string"
+        },
+        "duration_ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "endpoint": {
+          "description": "Scheme, host, port and path of the endpoint. No credentials.",
+          "type": "string"
+        },
+        "error": {
+          "description": "For failures: a bounded description.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "http_status": {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/InferenceOutcome"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "request_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "request_id": {
+          "description": "Correlates the calls made for one proposal (stable for identical inputs).",
+          "type": "string"
+        },
+        "response_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "response_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "retry": {
+          "description": "Which re-ask this is after an invalid response (0 = first).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "round": {
+          "description": "Which read round within the proposal (0 = the first question).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "tokens": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TokenUsage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "validation": {
+          "description": "For `invalid_response`: a bounded summary of why.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "request_id",
+        "call_id",
+        "call_index",
+        "retry",
+        "round",
+        "provider",
+        "model",
+        "endpoint",
+        "context_digest",
+        "request_bytes",
+        "response_bytes",
+        "started_at",
+        "duration_ms",
+        "outcome"
+      ],
+      "type": "object"
+    },
+    "InferenceOutcome": {
+      "description": "What became of one attempted call to an inference backend.",
+      "oneOf": [
+        {
+          "enum": [
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "success",
+          "description": "A response was received and validated.",
+          "type": "string"
+        },
+        {
+          "const": "timeout",
+          "description": "The call exceeded its deadline. Says nothing about whether anything happened.",
+          "type": "string"
+        },
+        {
+          "const": "transport_error",
+          "description": "The endpoint could not complete the request (refused, reset, HTTP error).",
+          "type": "string"
+        },
+        {
+          "const": "invalid_response",
+          "description": "A response arrived but failed schema or semantic validation.",
+          "type": "string"
+        },
+        {
+          "const": "budget_exhausted",
+          "description": "The task has no inference-call budget left; no call was made.",
+          "type": "string"
+        }
+      ]
+    },
     "Investigation": {
       "properties": {
         "capabilities": {
@@ -1096,6 +1282,47 @@
       "required": [
         "termination",
         "duration_ms"
+      ],
+      "type": "object"
+    },
+    "ProposalOrigin": {
+      "description": "How a validated proposal was produced. A reference to evidence, not evidence\nthat the proposal is right.",
+      "properties": {
+        "advances": {
+          "description": "Criteria the proposer said this is meant to advance (a claim).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "call_id": {
+          "description": "The call whose response became this proposal.",
+          "type": "string"
+        },
+        "evidence": {
+          "description": "Context items the proposer cited (each exists in the context it was given).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "call_id",
+        "provider",
+        "model",
+        "advances",
+        "evidence"
       ],
       "type": "object"
     },
@@ -1393,6 +1620,31 @@
           "type": "string"
         }
       ]
+    },
+    "TokenUsage": {
+      "properties": {
+        "completion": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "prompt": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "prompt",
+        "completion",
+        "total"
+      ],
+      "type": "object"
     },
     "TreeEntry": {
       "description": "One path in `git status --porcelain` output.",

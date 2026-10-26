@@ -35,6 +35,9 @@ pub struct ProposalContext<'a> {
     /// Bounded, provenance-tagged facts about the project and the task, as of
     /// this proposal. Rebuilt for every proposal; see [`super::context`].
     pub context: &'a super::context::ContextSnapshot,
+    /// Where a model-backed proposer records each attempted inference call, and
+    /// learns whether the task was cancelled.
+    pub inference: &'a dyn InferenceLog,
     /// Read project files (recorded as events). The only way a proposer
     /// learns file contents, and the source of the hashes patches depend on.
     pub files: &'a dyn ProjectFiles,
@@ -111,6 +114,38 @@ pub enum Proposal {
     GiveUp {
         reason: String,
     },
+    /// The proposer needs an answer from a person before it can continue.
+    Clarify {
+        question: String,
+    },
+}
+
+/// The proposer's side of inference accounting. The controller implements it
+/// over the task's journal events, so every attempted call is recorded the moment
+/// it ends, whatever happens next.
+pub trait InferenceLog {
+    /// Calls attempted for this task so far (recorded ones).
+    fn calls_used(&self) -> u32;
+    /// Record one attempted call (a refusal to call, for budget, is recorded too).
+    fn record(&self, call: InferenceCallInfo);
+    /// True once the task is being cancelled or the controller is stopping.
+    fn cancelled(&self) -> bool;
+    /// Say how the proposal about to be returned was produced.
+    fn set_origin(&self, origin: ProposalOrigin);
+}
+
+/// For proposers that make no inference calls.
+pub struct NoInference;
+
+impl InferenceLog for NoInference {
+    fn calls_used(&self) -> u32 {
+        0
+    }
+    fn record(&self, _: InferenceCallInfo) {}
+    fn cancelled(&self) -> bool {
+        false
+    }
+    fn set_origin(&self, _: ProposalOrigin) {}
 }
 
 pub trait StepProposer: Send {

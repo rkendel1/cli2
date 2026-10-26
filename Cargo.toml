@@ -33,4 +33,5 @@ sha2 = "0.11"
 tempfile = "3"
 thiserror = "2"
 toml = "1"
+ureq = { version = "3", default-features = false }
 uuid = { version = "1", features = ["v4"] }

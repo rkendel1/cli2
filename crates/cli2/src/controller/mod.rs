@@ -29,6 +29,8 @@
 //!   report.
 
 pub mod context;
+pub mod inference;
+pub mod openai;
 pub mod proposer;
 pub mod state;
 
@@ -63,6 +65,8 @@ struct Cell {
     version: Mutex<u64>,
     changed: Condvar,
     worker_running: AtomicBool,
+    /// Set when a cancel is requested: wakes anything waiting on a model.
+    cancel: AtomicBool,
 }
 
 pub struct Controller {
@@ -95,8 +99,24 @@ impl Controller {
                 Ok(Box::new(OutlineProposer) as Box<dyn StepProposer>)
             })),
         );
-        if let Some(client) = model_from_config(&c.runtime.config().home) {
-            c.register_model(Arc::new(client));
+        // An inference endpoint, if one is configured, is the `model` strategy.
+        // A broken configuration is reported when a task asks for it; nothing
+        // falls back to another provider. Without either, there is no `model`.
+        let home = c.runtime.config().home.clone();
+        match openai::from_config(&home) {
+            Ok(Some((backend, settings))) => c.register_inference(Arc::new(backend), settings),
+            Err(why) => {
+                let why = format!("controller.inference in config.json is not usable: {why}");
+                c.register_strategy(
+                    "model",
+                    Arc::new(FnStrategy(move |_: &CreateTaskParams| Err(why.clone()))),
+                );
+            }
+            Ok(None) => {
+                if let Some(client) = model_from_config(&home) {
+                    c.register_model(Arc::new(client));
+                }
+            }
         }
         c
     }
@@ -125,7 +145,26 @@ impl Controller {
         self.strategies.lock().unwrap().insert(name.to_string(), f);
     }
 
-    /// Enable the `model` strategy with a model client.
+    /// Enable the `model` strategy over an inference backend (the strict
+    /// `cli2.model_reply.v1` contract, with file edits). Replaces any earlier
+    /// `model` strategy.
+    pub fn register_inference(
+        &self,
+        backend: Arc<dyn inference::InferenceBackend>,
+        settings: inference::InferenceSettings,
+    ) {
+        self.register_strategy(
+            "model",
+            Arc::new(FnStrategy(move |_: &CreateTaskParams| {
+                Ok(Box::new(inference::InferenceProposer {
+                    backend: backend.clone(),
+                    settings: settings.clone(),
+                }) as Box<dyn StepProposer>)
+            })),
+        );
+    }
+
+    /// Enable the `model` strategy with a legacy model client.
     pub fn register_model(&self, client: Arc<dyn ModelClient>) {
         struct Shared(Arc<dyn ModelClient>);
         impl ModelClient for Shared {
@@ -154,6 +193,7 @@ impl Controller {
                     version: Mutex::new(0),
                     changed: Condvar::new(),
                     worker_running: AtomicBool::new(false),
+                    cancel: AtomicBool::new(false),
                 })
             })
             .clone()
@@ -537,6 +577,8 @@ impl Controller {
     }
 
     pub fn cancel(self: &Arc<Self>, task_id: &str, reason: Option<String>) -> Result<TaskView> {
+        // Before anything else: a model call in flight should stop waiting.
+        self.cell(task_id).cancel.store(true, Ordering::SeqCst);
         let j = self.runtime.journal()?;
         {
             let __c = self.cell(task_id);
@@ -982,6 +1024,14 @@ impl Controller {
             },
         )?;
         let files = RecordingFiles::new(&self.runtime, &m.project);
+        let ilog = TaskInferenceLog {
+            controller: self,
+            journal: j,
+            task_id: &m.task_id,
+            cell: self.cell(&m.task_id),
+            used: std::sync::atomic::AtomicU32::new(m.inference_calls),
+            origin: Mutex::new(None),
+        };
         let ctx = ProposalContext {
             task_id: &m.task_id,
             goal: &m.goal,
@@ -992,6 +1042,7 @@ impl Controller {
             capabilities: &briefs,
             history,
             context: &snapshot,
+            inference: &ilog,
             files: &files,
             limits: &m.limits,
             steps_used: m.steps.len() as u32,
@@ -1065,8 +1116,22 @@ impl Controller {
                         file_edit: Some(edit_spec),
                         note: edit.note,
                         source,
+                        origin: ilog.origin.lock().unwrap().take(),
                     },
                 )?;
+                Ok(Tick::Progress)
+            }
+            Ok(Proposal::Clarify { question }) => {
+                let __c = self.cell(&m.task_id);
+                let _g = __c.op.lock().unwrap();
+                let fresh = self.load(j, &m.task_id)?;
+                if !fresh.state.is_terminal() {
+                    self.block(
+                        j,
+                        &fresh,
+                        &format!("the proposer needs an answer before it can continue: {question}"),
+                    )?;
+                }
                 Ok(Tick::Progress)
             }
             Ok(Proposal::GiveUp { reason }) => {
@@ -1132,6 +1197,7 @@ impl Controller {
                         file_edit: None,
                         note: step.note,
                         source,
+                        origin: ilog.origin.lock().unwrap().take(),
                     },
                 )?;
                 Ok(Tick::Progress)
@@ -1611,6 +1677,44 @@ fn briefs(caps: &[Capability]) -> Vec<CapabilityBrief> {
         .collect();
     v.sort_by(|a, b| a.id.cmp(&b.id));
     v
+}
+
+/// Records inference calls into the task's events as they happen.
+struct TaskInferenceLog<'a> {
+    controller: &'a Controller,
+    journal: &'a cli2_evidence::Journal,
+    task_id: &'a str,
+    cell: Arc<Cell>,
+    used: std::sync::atomic::AtomicU32,
+    origin: Mutex<Option<ProposalOrigin>>,
+}
+
+impl InferenceLog for TaskInferenceLog<'_> {
+    fn calls_used(&self) -> u32 {
+        self.used.load(Ordering::SeqCst)
+    }
+
+    fn record(&self, mut call: InferenceCallInfo) {
+        if call.outcome != InferenceOutcome::BudgetExhausted {
+            call.call_index = self.used.fetch_add(1, Ordering::SeqCst) + 1;
+        }
+        // Accounting must not be lost to a failed append: say so and carry on.
+        if let Err(e) = self.controller.append(
+            self.journal,
+            self.task_id,
+            DevTaskEventData::InferenceCall { call },
+        ) {
+            eprintln!("cli2: could not record an inference call: {e}");
+        }
+    }
+
+    fn cancelled(&self) -> bool {
+        self.cell.cancel.load(Ordering::SeqCst) || self.controller.stopping.load(Ordering::SeqCst)
+    }
+
+    fn set_origin(&self, origin: ProposalOrigin) {
+        *self.origin.lock().unwrap() = Some(origin);
+    }
 }
 
 /// The proposer's window onto project files: reads through the runtime (so the

@@ -70,6 +70,8 @@ pub struct Model {
     pub rejections: Vec<RejectionRec>,
     /// The working tree when the task began.
     pub baseline: Option<WorkingTree>,
+    /// Inference calls attempted for this task (every outcome but a refusal to call).
+    pub inference_calls: u32,
     pub last_seq: i64,
     /// Sequence number of the newest `criteria_evaluated` event.
     pub last_evaluated_seq: i64,
@@ -140,6 +142,7 @@ pub fn fold(events: &[DevTaskEvent]) -> Option<Model> {
                     statuses: vec![],
                     rejections: vec![],
                     baseline: None,
+                    inference_calls: 0,
                     final_report: None,
                     last_seq: e.seq,
                     last_evaluated_seq: 0,
@@ -180,6 +183,7 @@ fn apply(m: &mut Model, e: &DevTaskEvent) {
             satisfies,
             file_edit,
             note,
+            origin,
             ..
         } => {
             m.consecutive_rejections = 0;
@@ -203,6 +207,7 @@ fn apply(m: &mut Model, e: &DevTaskEvent) {
                     execution_id: None,
                     outcome: None,
                     proposer_note: note.clone(),
+                    origin: origin.clone(),
                     detail: None,
                 },
                 bindings: bindings.clone(),
@@ -232,6 +237,11 @@ fn apply(m: &mut Model, e: &DevTaskEvent) {
         }
         D::WorkingTreeBaseline { tree } => m.baseline = Some(tree.clone()),
         D::ContextBuilt { .. } => {}
+        D::InferenceCall { call } => {
+            if call.outcome != InferenceOutcome::BudgetExhausted {
+                m.inference_calls += 1;
+            }
+        }
         D::FileRead { .. } => {}
         D::PlanMade {
             step_id,
@@ -606,6 +616,7 @@ mod tests {
                     outcome_known: true,
                 }),
                 proposer_note: None,
+                origin: None,
                 detail: None,
             },
             bindings: Default::default(),

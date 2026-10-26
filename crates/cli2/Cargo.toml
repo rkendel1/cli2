@@ -33,6 +33,7 @@ hex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+ureq.workspace = true
 
 [dev-dependencies]
 cli2-client.workspace = true
