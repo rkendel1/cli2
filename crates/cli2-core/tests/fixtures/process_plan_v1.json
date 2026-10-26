@@ -1,0 +1,154 @@
+{
+  "schema_version": "cli2.plan.v1",
+  "plan_id": "plan_cbc74d03c52b470fbfdcd01b333f50ec",
+  "request_id": "req_02f66e9ba2e8466e9277f670e1e69b86",
+  "created_at": "2026-10-26T18:24:01.301Z",
+  "intent": "make hello",
+  "candidates": [
+    {
+      "capability_id": "project-task:make:hello",
+      "kind": "project_task",
+      "score": 100.0,
+      "viable": true,
+      "reasons": [
+        "intent exactly names this capability",
+        "intent names `hello`",
+        "description mentions make",
+        "intent mentions `make`",
+        "defined by the current project"
+      ],
+      "invocation": [
+        "make",
+        "hello"
+      ]
+    },
+    {
+      "capability_id": "executable:make",
+      "kind": "executable",
+      "score": 6.0,
+      "viable": false,
+      "reasons": [
+        "intent names `make`",
+        "not viable: the interface of `make` is not characterized; cli2 will not guess its arguments"
+      ]
+    },
+    {
+      "capability_id": "executable:cmake",
+      "kind": "executable",
+      "score": 2.6,
+      "viable": false,
+      "reasons": [
+        "name `cmake` contains `make`",
+        "not viable: the interface of `cmake` is not characterized; cli2 will not guess its arguments"
+      ]
+    },
+    {
+      "capability_id": "executable:ccmake",
+      "kind": "executable",
+      "score": 2.33,
+      "viable": false,
+      "reasons": [
+        "name `ccmake` contains `make`",
+        "not viable: the interface of `ccmake` is not characterized; cli2 will not guess its arguments"
+      ]
+    },
+    {
+      "capability_id": "executable:gnumake",
+      "kind": "executable",
+      "score": 2.14,
+      "viable": false,
+      "reasons": [
+        "name `gnumake` contains `make`",
+        "not viable: the interface of `gnumake` is not characterized; cli2 will not guess its arguments"
+      ]
+    },
+    {
+      "capability_id": "executable:makepqg",
+      "kind": "executable",
+      "score": 2.14,
+      "viable": false,
+      "reasons": [
+        "name `makepqg` contains `make`",
+        "not viable: the interface of `makepqg` is not characterized; cli2 will not guess its arguments"
+      ]
+    },
+    {
+      "capability_id": "executable:automake",
+      "kind": "executable",
+      "score": 2.0,
+      "viable": false,
+      "reasons": [
+        "name `automake` contains `make`",
+        "not viable: the interface of `automake` is not characterized; cli2 will not guess its arguments"
+      ]
+    },
+    {
+      "capability_id": "executable:watchman-make",
+      "kind": "executable",
+      "score": 2.0,
+      "viable": false,
+      "reasons": [
+        "intent partially matches name `watchman-make`",
+        "not viable: the interface of `watchman-make` is not characterized; cli2 will not guess its arguments"
+      ]
+    }
+  ],
+  "selection_reason": "`project-task:make:hello` scored 100 (intent exactly names this capability; intent names `hello`; description mentions make; intent mentions `make`; defined by the current project); next best `executable:make` scored 6",
+  "steps": [
+    {
+      "index": 0,
+      "capability_id": "project-task:make:hello",
+      "capability_fingerprint": "task:v1:cc5a0d95db09c60ab839036c53ada5aa866bd2ed202b10dc6932c652badda0fe",
+      "executable": "make",
+      "resolved_executable": "/usr/bin/make",
+      "executable_fingerprint": "file:v1:size=200560:mtime=1788431650000000000:ino=1152921500312607511:mode=100755",
+      "arguments": [
+        "hello"
+      ],
+      "working_directory": "/private/var/folders/53/0x2kphmx5gl2b9bh4h0y42600000gn/T/tmp.xxwhwB4rX3/p"
+    }
+  ],
+  "constraints": {},
+  "timeout_secs": 600,
+  "effects": {
+    "classes": [],
+    "certainty": "unknown",
+    "source": "none",
+    "confidence": 0.0,
+    "notes": [
+      "effects of this task have not been characterized"
+    ]
+  },
+  "risk": "medium",
+  "approval": {
+    "level": "confirm",
+    "requirements": [
+      {
+        "level": "confirm",
+        "reason": "effects are unknown and are not treated as read-only"
+      }
+    ]
+  },
+  "verification": {
+    "checks": [
+      {
+        "check": {
+          "type": "process_exit_status",
+          "expected": 0
+        },
+        "task_level": false,
+        "source": "runtime"
+      }
+    ],
+    "success_criteria": [
+      "process exits with status 0"
+    ]
+  },
+  "rationale": "project-task:make:hello \u2014 make target `hello` (defined in /private/var/folders/53/0x2kphmx5gl2b9bh4h0y42600000gn/T/tmp.xxwhwB4rX3/p/Makefile).",
+  "limitations": [
+    "The operation's effects are unknown; they have not been characterized.",
+    "No task-level postcondition is known for this capability; a zero exit status shows only that the process completed, not that the task succeeded.",
+    "Execution is not sandboxed; the process runs with your user's permissions."
+  ],
+  "digest": "sha256:9fd740d93ae4ee044dfbc34bd9ba9a4c326681409ce152aed19d89debeb366df"
+}

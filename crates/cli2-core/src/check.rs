@@ -20,6 +20,10 @@ pub enum Check {
     PathExists { path: String },
     /// Captured standard output contains the given text.
     StdoutContains { text: String },
+    /// After a file edit, the file read back from disk has exactly this
+    /// content hash. It shows the edit landed as planned; it says nothing about
+    /// whether the change achieves anything.
+    FileSha256 { path: String, sha256: String },
 }
 
 impl Check {
@@ -34,6 +38,7 @@ impl Check {
             Check::FileExists { .. } => "file_exists",
             Check::PathExists { .. } => "path_exists",
             Check::StdoutContains { .. } => "stdout_contains",
+            Check::FileSha256 { .. } => "file_sha256",
         }
     }
 
@@ -54,6 +59,9 @@ impl Check {
             }
             Check::PathExists { path } => format!("path {path} exists"),
             Check::StdoutContains { text } => format!("stdout contains {text:?}"),
+            Check::FileSha256 { path, sha256 } => {
+                format!("file {path} reads back with content hash {sha256}")
+            }
         }
     }
 }

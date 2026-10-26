@@ -483,6 +483,8 @@ fn dispatch(
         ops::EXECUTION_GET => with!(ExecutionIdParams, |p| rt.execution(&p.execution_id)),
         ops::EXECUTION_EVENTS => with!(EventsParams, |p| rt.events(&p)),
         ops::EXECUTION_CANCEL => with!(ExecutionIdParams, |p| rt.cancel(&p.execution_id)),
+        ops::FILE_READ => with!(FileReadParams, |p| rt.read_file(&p)),
+        ops::PLAN_EDIT => with!(PlanEditParams, |p| rt.plan_edit(p)),
         ops::TASK_LIST => with!(TaskListParams, |p| rt.tasks(p.limit)),
         ops::TASK_GET => with!(TaskGetParams, |p| rt.task(&p.id)),
         ops::EVIDENCE_READ => with!(EvidenceParams, |p| rt.evidence(&p.reference, p.max_bytes)),

@@ -514,7 +514,19 @@ fn the_full_loop_fails_verification_retries_and_completes_only_when_verified() {
     }
 
     // The history is a legal walk through the state machine, ending in completed, with no skips.
-    let ev = rig.events(&v.task_id);
+    // The terminal state and the final `completed` event are two journal
+    // appends; wait for the second before reading the whole history.
+    let mut ev = rig.events(&v.task_id);
+    for _ in 0..100 {
+        if matches!(
+            ev.last().map(|e| &e.data),
+            Some(DevTaskEventData::Completed { .. })
+        ) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        ev = rig.events(&v.task_id);
+    }
     let walk = states(&ev);
     assert_eq!(walk.first(), Some(&TaskState::Investigating));
     assert_eq!(walk.last(), Some(&TaskState::Completed));
@@ -1444,6 +1456,7 @@ fn the_outline_strategy_is_deterministic_and_stops_precisely_when_it_cannot_fini
                 selection: None,
                 bindings: BTreeMap::new(),
                 satisfies: s.iter().map(|x| x.to_string()).collect(),
+                file_edit: None,
             })
             .collect()
     };

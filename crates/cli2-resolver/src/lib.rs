@@ -25,7 +25,7 @@ use serde::Serialize;
 use cli2_core::{
     Candidate, Capability, CapabilityKind, Check, Clarification, ClarificationOption,
     EffectCertainty, Effects, InterfaceCapture, InterfaceCompleteness, ParameterRole, PlannedCheck,
-    RecordedRequest, Step, VerificationProcedure,
+    ProcessStep, RecordedRequest, Step, VerificationProcedure,
 };
 
 use terms::{
@@ -578,7 +578,7 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
         (CapabilityKind::ProjectTask, Some(root)) => root.clone(),
         _ => ctx.request.working_directory.clone(),
     };
-    let step = Step {
+    let step = Step::Process(ProcessStep {
         index: 0,
         capability_id: cap.id.clone(),
         capability_fingerprint: cap.fingerprint.clone(),
@@ -587,7 +587,7 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
         executable_fingerprint: exe_fp,
         arguments: args.clone(),
         working_directory,
-    };
+    });
 
     // Verification procedure.
     let mut checks = vec![PlannedCheck {

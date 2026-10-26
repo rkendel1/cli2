@@ -235,8 +235,21 @@ impl cli2_execution::ProcessObserver for StepObserver {
         self.inner.step_started(&self.step, pid);
     }
     fn output(&self, stream: cli2_execution::StreamKind, chunk: &[u8]) {
-        self.inner.output(self.step.index, stream, chunk);
+        self.inner.output(self.step.index(), stream, chunk);
     }
+}
+
+/// A request to modify one file; see [`Engine::plan_file_edit`].
+#[derive(Debug, Clone)]
+pub struct FileEditInput {
+    pub project_root: String,
+    /// Relative to `project_root`.
+    pub path: String,
+    /// Hash of the version the patch was prepared against; `None` creates the file.
+    pub expected_sha256: Option<String>,
+    pub hunks: Vec<Hunk>,
+    pub intent: String,
+    pub constraints: Constraints,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1001,7 +1014,7 @@ impl Engine {
                     "capability_id": draft.selected.id,
                     "interface_completeness": draft.selected.interface.completeness,
                     "capture": cap,
-                    "arguments": draft.steps.first().map(|s| &s.arguments),
+                    "arguments": draft.steps.first().and_then(|s| s.as_process()).map(|p| &p.arguments),
                 }),
             )?;
         }
@@ -1367,6 +1380,13 @@ impl Engine {
     pub(crate) fn stale_reasons(&mut self, plan: &Plan) -> Vec<String> {
         let mut reasons = Vec::new();
         for step in &plan.steps {
+            let step = match step {
+                Step::Process(p) => p,
+                Step::FileEdit(f) => {
+                    file_edit_stale(f, &mut reasons);
+                    continue;
+                }
+            };
             match cli2_discovery::executable_fingerprint(Path::new(&step.resolved_executable)) {
                 Ok(fp) if fp == step.executable_fingerprint => {}
                 Ok(_) => reasons.push(format!(
@@ -1552,11 +1572,11 @@ impl Engine {
 
         // 3. Execution.
         let mut step_results: Vec<StepResult> = Vec::new();
-        let mut outcomes = Vec::new();
+        let mut outcomes: Vec<(std::time::SystemTime, Vec<u8>)> = Vec::new();
         let mut stopped = false;
-        for step in &plan.steps {
+        for planned in &plan.steps {
             if stopped {
-                step_results.push(not_started(step));
+                step_results.push(not_started(planned));
                 continue;
             }
             self.journal.event(
@@ -1564,9 +1584,26 @@ impl Engine {
                 "step_started",
                 &serde_json::json!({
                     "plan_id": plan.plan_id,
-                    "step": step,
+                    "step": planned,
                 }),
             )?;
+            let step = match planned {
+                Step::Process(p) => p,
+                Step::FileEdit(f) => {
+                    let sr = self.apply_file_edit(f)?;
+                    self.journal
+                        .event(&request.request_id, "step_finished", &sr)?;
+                    if let Some(o) = &opts.observer {
+                        o.0.step_finished(&sr);
+                    }
+                    if !sr.process_succeeded() {
+                        stopped = true;
+                    }
+                    outcomes.push((std::time::SystemTime::now(), Vec::new()));
+                    step_results.push(sr);
+                    continue;
+                }
+            };
             let mut spec = ProcessSpec::new(
                 &step.resolved_executable,
                 step.arguments.clone(),
@@ -1577,7 +1614,7 @@ impl Engine {
             if let Some(o) = &opts.observer {
                 spec.observer = Some(cli2_execution::Observer(std::sync::Arc::new(
                     StepObserver {
-                        step: step.clone(),
+                        step: planned.clone(),
                         inner: o.0.clone(),
                     },
                 )));
@@ -1605,6 +1642,7 @@ impl Engine {
                 stdout_truncated: out.stdout_truncated(),
                 stderr_truncated: out.stderr_truncated(),
                 error: out.error.clone(),
+                file_edit: None,
             };
             self.journal
                 .event(&request.request_id, "step_finished", &sr)?;
@@ -1615,17 +1653,17 @@ impl Engine {
                 stopped = true;
             }
             step_results.push(sr);
-            outcomes.push(out);
+            outcomes.push((out.started, out.stdout));
         }
 
         // 4. Verification.
         let observations: Vec<StepObservation<'_>> = step_results
             .iter()
             .zip(outcomes.iter())
-            .map(|(r, o)| StepObservation {
+            .map(|(r, (started, stdout))| StepObservation {
                 result: r,
-                started: o.started,
-                stdout: &o.stdout,
+                started: *started,
+                stdout,
             })
             .collect();
         let verification = cli2_evidence::verify(&plan.verification, &observations);
@@ -1664,6 +1702,9 @@ impl Engine {
         };
         let last = ran.last();
         let message = match status {
+            Status::Succeeded if plan.steps.iter().all(|s| s.as_file_edit().is_some()) => {
+                "Succeeded: the file was edited and read back as planned. This shows the change was made, not that it achieves anything; run the project's checks to find out.".to_string()
+            }
             Status::Succeeded if verification.status == VerificationStatus::Passed => {
                 "Succeeded: the process completed and task-level verification passed.".to_string()
             }
@@ -1675,6 +1716,10 @@ impl Engine {
             }
             Status::Cancelled => "Cancelled: execution was interrupted and the process was terminated.".to_string(),
             _ => match last {
+                Some(s) if s.file_edit.is_some() => format!(
+                    "Failed: the file was not edited as planned ({}).",
+                    s.file_edit.as_ref().map(|o| o.message.clone()).unwrap_or_default()
+                ),
                 Some(s) if s.termination == Termination::TimedOut => format!(
                     "Failed: the process timed out after {}s and was terminated.",
                     plan.timeout_secs
@@ -1719,6 +1764,254 @@ impl Engine {
             o.0.finished(&result);
         }
         Ok(result)
+    }
+
+    /// Commit a file-edit step and describe, as evidence, what happened.
+    fn apply_file_edit(&mut self, f: &FileEditStep) -> Result<StepResult, EngineError> {
+        let started_at = now_rfc3339();
+        let t0 = std::time::Instant::now();
+        let cancelled = self.cancel.is_cancelled();
+        let outcome = if cancelled {
+            FileEditOutcome {
+                status: FileEditStatus::Refused,
+                path: f.path.clone(),
+                root: f.root.clone(),
+                expected_sha256: f.expected_sha256.clone(),
+                before_sha256: None,
+                planned_sha256: f.result_sha256.clone(),
+                after_sha256: None,
+                bytes_before: None,
+                bytes_after: None,
+                message: "execution was cancelled before the edit was applied; nothing was written"
+                    .into(),
+            }
+        } else {
+            cli2_execution::fsedit::apply(f)
+        };
+        // The exact change that was approved is kept as the step's stdout.
+        let diff = f.unified_diff().into_bytes();
+        let note = if outcome.applied() {
+            Vec::new()
+        } else {
+            outcome.message.clone().into_bytes()
+        };
+        let stdout_ref = self.journal.store_blob(&diff)?;
+        let stderr_ref = self.journal.store_blob(&note)?;
+        Ok(StepResult {
+            index: f.index,
+            capability_id: f.capability_id.clone(),
+            executable: f.capability_id.clone(),
+            arguments: vec![f.path.clone()],
+            working_directory: f.root.clone(),
+            termination: if outcome.applied() {
+                Termination::Applied
+            } else if cancelled {
+                Termination::Cancelled
+            } else {
+                Termination::Refused
+            },
+            exit_code: None,
+            signal: None,
+            pid: None,
+            started_at,
+            finished_at: now_rfc3339(),
+            duration_ms: t0.elapsed().as_millis() as u64,
+            stdout_ref: Some(stdout_ref),
+            stderr_ref: Some(stderr_ref),
+            stdout_bytes: diff.len() as u64,
+            stderr_bytes: note.len() as u64,
+            stdout_truncated: false,
+            stderr_truncated: false,
+            error: (!outcome.applied()).then(|| outcome.message.clone()),
+            file_edit: Some(Box::new(outcome)),
+        })
+    }
+
+    /// Plan a modification of one file. The patch is checked against the file
+    /// as it is now, the result is computed, and everything that determines
+    /// the change goes into the plan the approval will be bound to. Nothing is
+    /// written. Whatever the request's constraints say, a file edit never runs
+    /// without at least a confirmation.
+    pub fn plan_file_edit(
+        &mut self,
+        input: FileEditInput,
+        opts: &RunOptions,
+        ui: &mut dyn Interaction,
+    ) -> Result<ExecutionResult, EngineError> {
+        use cli2_execution::fsedit::{read_file, ReadError};
+        let invalid = |m: String| EngineError::Invalid(m);
+        let root = PathBuf::from(&input.project_root)
+            .canonicalize()
+            .map_err(|e| invalid(format!("project root {}: {e}", input.project_root)))?;
+        if !root.is_dir() {
+            return Err(invalid(format!("{} is not a directory", root.display())));
+        }
+        let path = normalize_rel_path(&input.path).map_err(invalid)?;
+        validate_hunks(&input.hunks).map_err(invalid)?;
+        if let Some(h) = &input.expected_sha256 {
+            if !h.starts_with("sha256:") {
+                return Err(invalid("expected_sha256 must be `sha256:<hex>`".into()));
+            }
+        }
+        let current = match read_file(&root, &path) {
+            Ok(snap) => Some(snap),
+            Err(ReadError::Missing(_)) => None,
+            Err(ReadError::Refused(m)) => return Err(invalid(m)),
+        };
+        match (&input.expected_sha256, &current) {
+            (Some(h), Some(c)) if &c.sha256 == h => {}
+            (Some(_), Some(c)) => {
+                return Err(EngineError::Refused {
+                    code: "stale_patch",
+                    message: format!(
+                        "{path} is not the version the patch was prepared against (it is {}); read it again and prepare a new patch",
+                        c.sha256
+                    ),
+                })
+            }
+            (Some(_), None) => {
+                return Err(EngineError::Refused {
+                    code: "stale_patch",
+                    message: format!("{path} does not exist; the patch was prepared against an existing file"),
+                })
+            }
+            (None, Some(_)) => {
+                return Err(EngineError::Refused {
+                    code: "already_exists",
+                    message: format!("{path} already exists; to change it, prepare a patch against its current content"),
+                })
+            }
+            (None, None) => {}
+        }
+        let before = current.map(|c| c.bytes).unwrap_or_default();
+        let before_text = String::from_utf8(before).map_err(|_| {
+            invalid(format!(
+                "{path} is not valid UTF-8; only text files can be edited"
+            ))
+        })?;
+        let after = apply_hunks(&before_text, &input.hunks).map_err(invalid)?;
+
+        let request = RecordedRequest {
+            schema_version: REQUEST_SCHEMA_VERSION.into(),
+            request_id: new_id("req"),
+            received_at: now_rfc3339(),
+            intent: input.intent.trim().to_string(),
+            constraints: input.constraints.clone(),
+            working_directory: root.display().to_string(),
+            caller: Caller {
+                kind: if opts.interactive {
+                    CallerKind::Interactive
+                } else {
+                    CallerKind::NonInteractive
+                },
+                #[cfg(unix)]
+                // SAFETY: getuid has no failure modes.
+                uid: Some(unsafe { libc::getuid() }),
+                #[cfg(not(unix))]
+                uid: None,
+                established_by: "runtime:local_process".into(),
+            },
+            selection: None,
+            bindings: Default::default(),
+            expectations: vec![],
+        };
+        self.journal.record_request(&request)?;
+
+        let step = FileEditStep {
+            kind: FileEditKind::FileEdit,
+            index: 0,
+            capability_id: FILE_EDIT_CAPABILITY_ID.into(),
+            root: root.display().to_string(),
+            path: path.clone(),
+            expected_sha256: input.expected_sha256.clone(),
+            hunks: input.hunks.clone(),
+            result_sha256: content_hash(after.as_bytes()),
+            result_bytes: after.len() as u64,
+        };
+        let effects = Effects {
+            classes: vec![EffectClass::ModifiesFiles],
+            certainty: EffectCertainty::Declared,
+            source: "file_edit".into(),
+            confidence: 1.0,
+            notes: vec![format!("writes {path} below {}", root.display())],
+        };
+        // A caller-supplied `modify_files=true` waives confirmation for
+        // *declared* project tasks. It must not waive review of a patch.
+        let mut judged = request.constraints.clone();
+        if judged.modify_files == Some(true) {
+            judged.modify_files = None;
+        }
+        let assessment = assess(&effects, &judged, &self.config.policy);
+        let mut plan = Plan {
+            schema_version: PLAN_SCHEMA_VERSION.into(),
+            plan_id: new_id("plan"),
+            request_id: request.request_id.clone(),
+            created_at: now_rfc3339(),
+            intent: request.intent.clone(),
+            candidates: vec![],
+            selection_reason: "an explicit file edit; no capability was searched for".into(),
+            steps: vec![Step::FileEdit(step.clone())],
+            constraints: request.constraints.clone(),
+            timeout_secs: opts
+                .timeout_secs
+                .unwrap_or(self.config.default_timeout_secs),
+            effects,
+            risk: assessment.risk,
+            approval: assessment.approval.clone(),
+            verification: VerificationProcedure {
+                checks: vec![PlannedCheck {
+                    check: Check::FileSha256 {
+                        path: path.clone(),
+                        sha256: step.result_sha256.clone(),
+                    },
+                    task_level: true,
+                    source: "runtime:file_edit".into(),
+                }],
+                success_criteria: vec![format!(
+                    "{path} reads back from disk with the planned content"
+                )],
+            },
+            rationale: format!(
+                "Edits {path} by applying {} hunk(s) to the version with hash {}.",
+                step.hunks.len(),
+                step.expected_sha256.as_deref().unwrap_or("(new file)")
+            ),
+            limitations: {
+                let mut l = assessment.limitations.clone();
+                l.push("Verification shows the file was written as planned. It does not show the change is correct; run the project's checks for that.".into());
+                l
+            },
+            digest: String::new(),
+        };
+        plan.seal();
+        self.journal.record_plan(&plan)?;
+        ui.preview(&plan);
+
+        if !assessment.violations.is_empty() {
+            return self.finish_without_execution(
+                &request,
+                &plan,
+                Status::Rejected,
+                assessment.violations.clone(),
+                None,
+                "Rejected: the plan violates the request's constraints or the active policy."
+                    .into(),
+            );
+        }
+        if !opts.execute {
+            return self.finish_without_execution(
+                &request,
+                &plan,
+                Status::Planned,
+                vec![],
+                None,
+                format!(
+                    "Plan {} created and not executed (approval required: {:?}); approve its digest to apply it.",
+                    plan.plan_id, plan.approval.level
+                ),
+            );
+        }
+        self.execute_plan(&request, plan, opts, ui)
     }
 
     /// Record an explicit approval for exactly this plan.
@@ -2083,12 +2376,24 @@ fn summary_from(plan: &Plan, approval: Option<&ApprovalRecord>, granted: bool) -
 
 fn not_started(step: &Step) -> StepResult {
     let now = now_rfc3339();
+    let (executable, arguments, working_directory) = match step {
+        Step::Process(p) => (
+            p.resolved_executable.clone(),
+            p.arguments.clone(),
+            p.working_directory.clone(),
+        ),
+        Step::FileEdit(f) => (
+            f.capability_id.clone(),
+            vec![f.path.clone()],
+            f.root.clone(),
+        ),
+    };
     StepResult {
-        index: step.index,
-        capability_id: step.capability_id.clone(),
-        executable: step.resolved_executable.clone(),
-        arguments: step.arguments.clone(),
-        working_directory: step.working_directory.clone(),
+        index: step.index(),
+        capability_id: step.capability_id().to_string(),
+        executable,
+        arguments,
+        working_directory,
         termination: Termination::NotStarted,
         exit_code: None,
         signal: None,
@@ -2103,5 +2408,51 @@ fn not_started(step: &Step) -> StepResult {
         stdout_truncated: false,
         stderr_truncated: false,
         error: Some("not started because an earlier step did not succeed".into()),
+        file_edit: None,
+    }
+}
+
+/// For each file edit of a plan, what the file looks like now relative to the
+/// patch. Used to describe an interrupted execution; read-only.
+pub fn file_edit_state_notes(plan: &Plan) -> Vec<String> {
+    use cli2_execution::fsedit::read_file;
+    plan.steps
+        .iter()
+        .filter_map(|s| s.as_file_edit())
+        .map(|f| match read_file(Path::new(&f.root), &f.path) {
+            Ok(snap) if snap.sha256 == f.result_sha256 => format!(
+                "{} currently has the content this plan would have produced, so the edit may have been committed; it was not confirmed and will not be applied again.",
+                f.path
+            ),
+            Ok(snap) if Some(&snap.sha256) == f.expected_sha256.as_ref() => format!(
+                "{} currently has the content the patch was prepared against, so the edit was probably not committed.",
+                f.path
+            ),
+            Ok(_) => format!(
+                "{} currently has neither the prepared-against content nor the planned result; it was changed by something else.",
+                f.path
+            ),
+            Err(cli2_execution::fsedit::ReadError::Missing(_)) if f.expected_sha256.is_none() => {
+                format!("{} does not exist, so the creation was probably not committed.", f.path)
+            }
+            Err(e) => format!("{} could not be inspected: {e}.", f.path),
+        })
+        .collect()
+}
+
+/// Reasons a planned file edit no longer applies to what is on disk now.
+fn file_edit_stale(f: &FileEditStep, reasons: &mut Vec<String>) {
+    use cli2_execution::fsedit::{read_file, ReadError};
+    match (read_file(Path::new(&f.root), &f.path), &f.expected_sha256) {
+        (Ok(snap), Some(h)) if &snap.sha256 == h => {}
+        (Ok(_), Some(_)) => {
+            reasons.push(format!("{} changed since the patch was prepared", f.path))
+        }
+        (Ok(_), None) => reasons.push(format!("{} now exists; the plan creates it", f.path)),
+        (Err(ReadError::Missing(_)), None) => {}
+        (Err(ReadError::Missing(_)), Some(_)) => {
+            reasons.push(format!("{} no longer exists", f.path))
+        }
+        (Err(ReadError::Refused(e)), _) => reasons.push(e),
     }
 }

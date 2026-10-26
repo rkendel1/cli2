@@ -7,12 +7,14 @@
 
 pub mod capability;
 pub mod check;
+pub mod fileedit;
 pub mod plan;
 pub mod request;
 pub mod result;
 
 pub use capability::*;
 pub use check::*;
+pub use fileedit::*;
 pub use plan::*;
 pub use request::*;
 pub use result::*;

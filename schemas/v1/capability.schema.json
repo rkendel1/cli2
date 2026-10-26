@@ -152,6 +152,27 @@
             "text"
           ],
           "type": "object"
+        },
+        {
+          "description": "After a file edit, the file read back from disk has exactly this\ncontent hash. It shows the edit landed as planned; it says nothing about\nwhether the change achieves anything.",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "type": {
+              "const": "file_sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path",
+            "sha256"
+          ],
+          "type": "object"
         }
       ]
     },

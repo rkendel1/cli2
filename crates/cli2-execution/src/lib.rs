@@ -1,6 +1,7 @@
 //! Authority and execution: policy assessment, approval enforcement, and
 //! bounded subprocess execution.
 
+pub mod fsedit;
 pub mod policy;
 pub mod process;
 

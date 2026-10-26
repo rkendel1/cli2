@@ -109,6 +109,29 @@ pub fn verify(procedure: &VerificationProcedure, steps: &[StepObservation<'_>]) 
                     )
                 }
             }
+            Check::FileSha256 { path, sha256 } => {
+                let read_back = steps
+                    .iter()
+                    .filter_map(|s| s.result.file_edit.as_ref())
+                    .find(|o| &o.path == path);
+                match read_back {
+                    None => (
+                        CheckStatus::Failed,
+                        format!("no file edit of {path} was recorded"),
+                    ),
+                    Some(o) if o.after_sha256.as_deref() == Some(sha256.as_str()) => (
+                        CheckStatus::Passed,
+                        format!("{path} read back from disk with the planned content hash"),
+                    ),
+                    Some(o) => (
+                        CheckStatus::Failed,
+                        format!(
+                            "{path} read back as {}, not the planned {sha256}",
+                            o.after_sha256.as_deref().unwrap_or("nothing")
+                        ),
+                    ),
+                }
+            }
             Check::StdoutContains { text } => {
                 let last = steps.last().expect("steps non-empty when all_ran_ok");
                 let out = String::from_utf8_lossy(last.stdout);

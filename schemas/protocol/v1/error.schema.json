@@ -77,6 +77,11 @@
           "type": "string"
         },
         {
+          "const": "stale_patch",
+          "description": "A file edit was prepared against a version of the file that is no longer current.",
+          "type": "string"
+        },
+        {
           "const": "busy",
           "description": "The runtime is at capacity; retry later.",
           "type": "string"

@@ -75,6 +75,27 @@
             "text"
           ],
           "type": "object"
+        },
+        {
+          "description": "After a file edit, the file read back from disk has exactly this\ncontent hash. It shows the edit landed as planned; it says nothing about\nwhether the change achieves anything.",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "type": {
+              "const": "file_sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path",
+            "sha256"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -116,6 +137,56 @@
       ],
       "type": "object"
     },
+    "FileEditSpec": {
+      "additionalProperties": false,
+      "description": "A patch to one file, against a known version. It is a *request*: the\nruntime plans it, a person approves the exact plan, and the runtime applies it.",
+      "properties": {
+        "expected_sha256": {
+          "description": "`sha256` of the version the hunks were prepared against (from a file\nread). Omit to create a file that must not exist yet.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hunks": {
+          "items": {
+            "$ref": "#/$defs/Hunk"
+          },
+          "type": "array"
+        },
+        "path": {
+          "description": "Relative to the project root.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "hunks"
+      ],
+      "type": "object"
+    },
+    "Hunk": {
+      "description": "Replace `old_text` (which must match the file exactly, starting at the\n1-based line `start_line`) with `new_text`. Both are whole lines, including\ntheir line endings. An empty `old_text` inserts before `start_line`.",
+      "properties": {
+        "new_text": {
+          "type": "string"
+        },
+        "old_text": {
+          "type": "string"
+        },
+        "start_line": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start_line",
+        "old_text",
+        "new_text"
+      ],
+      "type": "object"
+    },
     "Limits": {
       "additionalProperties": false,
       "properties": {
@@ -146,6 +217,17 @@
           },
           "default": {},
           "type": "object"
+        },
+        "file_edit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FileEditSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A file modification. Such a step is always a `change`, has no\n`selection` and cannot claim to satisfy a criterion: a write is not\nevidence that anything works."
         },
         "intent": {
           "type": "string"

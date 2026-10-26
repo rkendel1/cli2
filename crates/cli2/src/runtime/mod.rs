@@ -31,7 +31,9 @@ use serde_json::{json, Value};
 use executions::{EventSink, Registry};
 pub use executions::{Execution, MAX_BUFFERED_OUTPUT};
 
-use crate::engine::{Config, Engine, EngineError, EngineObserver, NonInteractive, RunOptions};
+use crate::engine::{
+    Config, Engine, EngineError, EngineObserver, FileEditInput, NonInteractive, RunOptions,
+};
 use crate::output::{started_steps, OutputId, Part};
 use crate::semantic::ResolverMode;
 use crate::workflow::engine_ext::SearchOptions;
@@ -82,6 +84,7 @@ impl From<EngineError> for RuntimeError {
                 "stale_plan" => ErrorCode::StalePlan,
                 "plan_rejected" => ErrorCode::PlanRejected,
                 "already_executed" => ErrorCode::AlreadyExecuted,
+                "stale_patch" => ErrorCode::StalePatch,
                 _ => ErrorCode::Conflict,
             },
             _ => ErrorCode::Internal,
@@ -278,6 +281,99 @@ impl Runtime {
                 &outcome.request_id,
                 "plan_requested",
                 &json!({"idempotency_key": key, "project": dir.display().to_string(), "intent": p.intent.trim()}),
+            )?;
+        }
+        Ok(plan_result(outcome, false))
+    }
+
+    /// Read a project file with the same containment rules as an edit.
+    pub fn read_file(&self, p: &FileReadParams) -> Result<FileReadResult> {
+        use cli2_execution::fsedit::{read_file, ReadError};
+        let dir = self.project_dir(&p.project)?;
+        let path = cli2_core::normalize_rel_path(&p.path).map_err(|m| invalid(&m))?;
+        let snap = read_file(&dir, &path).map_err(|e| match e {
+            ReadError::Missing(m) => {
+                RuntimeError::new(ErrorCode::NotFound, format!("{m} does not exist"))
+            }
+            ReadError::Refused(m) => RuntimeError::new(ErrorCode::InvalidParams, m),
+        })?;
+        let content = String::from_utf8(snap.bytes).map_err(|_| {
+            invalid("the file is not valid UTF-8; only text files can be read here")
+        })?;
+        Ok(FileReadResult {
+            path,
+            sha256: snap.sha256,
+            bytes: content.len() as u64,
+            lines: content.split_inclusive('\n').count() as u64,
+            content,
+        })
+    }
+
+    /// Plan a patch to one file. **Never writes.** The plan carries the exact
+    /// hunks, the version they apply to and the resulting hash; approving its
+    /// digest approves exactly that change.
+    pub fn plan_edit(&self, p: PlanEditParams) -> Result<PlanResult> {
+        let dir = self.project_dir(&p.project)?;
+        let intent = p
+            .intent
+            .clone()
+            .filter(|i| !i.trim().is_empty())
+            .unwrap_or_else(|| format!("Edit {}", p.path));
+        let patch_id = cli2_core::content_hash(
+            &serde_json::to_vec(
+                &json!({"path": p.path, "expected": p.expected_sha256, "hunks": p.hunks}),
+            )
+            .expect("patch serializes"),
+        );
+        let _guard = p
+            .idempotency_key
+            .as_ref()
+            .map(|_| self.plan_lock.lock().unwrap());
+        let mut e = self.engine()?;
+        if let Some(key) = &p.idempotency_key {
+            for (_, request_id, data) in e.journal.events_of_kind("plan_requested")? {
+                if data["idempotency_key"].as_str() == Some(key) {
+                    if data["project"].as_str() != Some(&dir.display().to_string())
+                        || data["patch"].as_str() != Some(&patch_id)
+                    {
+                        return Err(RuntimeError::new(
+                            ErrorCode::Conflict,
+                            format!(
+                                "idempotency key {key:?} was already used for a different request"
+                            ),
+                        ));
+                    }
+                    let seq = e.journal.latest_result_seq(&request_id)?.ok_or_else(|| {
+                        RuntimeError::new(
+                            ErrorCode::Internal,
+                            "the original plan result is missing",
+                        )
+                    })?;
+                    let outcome = with_plan(&e, e.journal.result_row(seq)?);
+                    return Ok(plan_result(outcome, true));
+                }
+            }
+        }
+        let outcome = e.plan_file_edit(
+            FileEditInput {
+                project_root: dir.display().to_string(),
+                path: p.path.clone(),
+                expected_sha256: p.expected_sha256.clone(),
+                hunks: p.hunks.clone(),
+                intent,
+                constraints: p.constraints.clone(),
+            },
+            &RunOptions {
+                execute: false,
+                ..Default::default()
+            },
+            &mut NonInteractive,
+        )?;
+        if let Some(key) = &p.idempotency_key {
+            e.journal.event(
+                &outcome.request_id,
+                "plan_requested",
+                &json!({"idempotency_key": key, "project": dir.display().to_string(), "patch": patch_id}),
             )?;
         }
         Ok(plan_result(outcome, false))
@@ -596,7 +692,9 @@ impl Runtime {
             approval_id: snap.approval_id.clone(),
         });
         for s in &snap.steps {
-            push(EventData::StepFinished { result: s.clone() });
+            push(EventData::StepFinished {
+                result: Box::new(s.clone()),
+            });
         }
         if let Some(r) = &snap.result {
             push(EventData::Verification {
@@ -685,10 +783,16 @@ impl Runtime {
                     &json!({"execution_id": id, "result_seq": seq, "reconciled": true}),
                 )?,
                 None => {
-                    let r = e.record_interrupted(
-                        &plan_id,
-                        "Interrupted: the runtime that was executing this plan ended before recording an outcome. Whether the command completed is unknown; no success is claimed.".into(),
-                    )?;
+                    let mut message = "Interrupted: the runtime that was executing this plan ended before recording an outcome. Whether the command completed is unknown; no success is claimed.".to_string();
+                    if let Ok(plan) = e.journal.plan(&plan_id) {
+                        // Read-only: say what a crash left behind. It is evidence
+                        // for a person; nothing is retried on the strength of it.
+                        for note in crate::engine::file_edit_state_notes(&plan) {
+                            message.push(' ');
+                            message.push_str(&note);
+                        }
+                    }
+                    let r = e.record_interrupted(&plan_id, message)?;
                     let seq = e.journal.latest_result_seq(&r.request_id)?;
                     e.journal.event(
                         &request_id,

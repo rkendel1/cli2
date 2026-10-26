@@ -314,7 +314,7 @@ fn first_failure(a: &mut Attempt, stage: Stage, detail: impl Into<String>) {
 
 fn argument_refs(caps: &BTreeMap<&str, &Capability>, plan: &Plan) -> u32 {
     let mut n = 0;
-    for s in &plan.steps {
+    for s in plan.steps.iter().filter_map(|s| s.as_process()) {
         let Some(c) = caps.get(s.capability_id.as_str()) else {
             continue;
         };
@@ -417,24 +417,28 @@ fn check_plan(a: &mut Attempt, prep: &Prepared, case: &Case, res: &ExecutionResu
         return false;
     };
     let caps: BTreeMap<&str, &Capability> = prep.caps.iter().map(|c| (c.id.as_str(), c)).collect();
-    let selected = plan.steps.first().map(|s| s.capability_id.clone());
+    let selected = plan.steps.first().map(|s| s.capability_id().to_string());
     a.selected = selected.clone();
-    a.argv = plan.steps.first().map(|s| s.argv());
+    a.argv = plan
+        .steps
+        .first()
+        .and_then(|s| s.as_process())
+        .map(|s| s.argv());
     a.approval_level = Some(lower(&plan.approval.level));
     a.invalid_capability_refs = plan
         .steps
         .iter()
-        .map(|s| s.capability_id.as_str())
+        .map(|s| s.capability_id())
         .chain(plan.candidates.iter().map(|c| c.capability_id.as_str()))
         .filter(|id| !prep.inventory.contains(*id))
         .count() as u32;
     a.invalid_argument_refs = argument_refs(&caps, plan);
     let valid = plan.is_intact()
         && !plan.steps.is_empty()
-        && plan
-            .steps
-            .iter()
-            .all(|s| Path::new(&s.resolved_executable).is_file())
+        && plan.steps.iter().all(|s| {
+            s.as_process()
+                .is_some_and(|p| Path::new(&p.resolved_executable).is_file())
+        })
         && a.invalid_capability_refs == 0
         && a.invalid_argument_refs == 0;
     a.plan_valid = Some(valid);

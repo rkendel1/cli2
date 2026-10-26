@@ -289,7 +289,7 @@ mod tests {
             intent: "x".into(),
             candidates: vec![],
             selection_reason: "".into(),
-            steps: vec![Step {
+            steps: vec![Step::Process(ProcessStep {
                 index: 0,
                 capability_id: "executable:true".into(),
                 capability_fingerprint: "fp".into(),
@@ -298,7 +298,7 @@ mod tests {
                 executable_fingerprint: "fp".into(),
                 arguments: vec![],
                 working_directory: "/".into(),
-            }],
+            })],
             constraints: Constraints::default(),
             timeout_secs: 10,
             effects: effects(vec![], EffectCertainty::Unknown),
@@ -400,7 +400,9 @@ mod tests {
         let a = grant(&p, ApprovalMethod::YesFlag, ApprovalDecision::Granted);
         assert_eq!(authorize(&p, Some(&a)), Ok(()));
         // Tamper without resealing.
-        p.steps[0].arguments.push("--force".into());
+        if let Step::Process(s) = &mut p.steps[0] {
+            s.arguments.push("--force".into());
+        }
         assert_eq!(
             authorize(&p, Some(&a)),
             Err(AuthorizationError::PlanModified)

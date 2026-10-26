@@ -437,6 +437,8 @@ pub fn termination_word(t: Termination, signal: Option<i32>) -> String {
         (Termination::Signaled, None) => "killed by a signal".into(),
         (Termination::NotStarted, _) => "not started".into(),
         (Termination::Exited, _) => "exited".into(),
+        (Termination::Applied, _) => "applied".into(),
+        (Termination::Refused, _) => "not applied".into(),
     }
 }
 

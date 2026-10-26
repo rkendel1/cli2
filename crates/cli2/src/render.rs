@@ -42,10 +42,28 @@ pub fn preview(plan: &Plan) -> String {
     let mut s = String::new();
     let _ = writeln!(s, "Proposed action: {}", plan.intent);
     for step in &plan.steps {
-        let _ = writeln!(s, "  Capability    {}", step.capability_id);
+        let _ = writeln!(s, "  Capability    {}", step.capability_id());
         let _ = writeln!(s, "  Command       {}", step.display_command());
-        let _ = writeln!(s, "  Executable    {}", step.resolved_executable);
-        let _ = writeln!(s, "  Directory     {}", step.working_directory);
+        match step {
+            Step::Process(p) => {
+                let _ = writeln!(s, "  Executable    {}", p.resolved_executable);
+                let _ = writeln!(s, "  Directory     {}", p.working_directory);
+            }
+            Step::FileEdit(f) => {
+                let _ = writeln!(s, "  Project root  {}", f.root);
+                let _ = writeln!(
+                    s,
+                    "  Prepared on   {}",
+                    f.expected_sha256
+                        .as_deref()
+                        .unwrap_or("(file does not exist; it will be created)")
+                );
+                let _ = writeln!(s, "  Result hash   {}", f.result_sha256);
+                for l in f.unified_diff().lines() {
+                    let _ = writeln!(s, "    {l}");
+                }
+            }
+        }
     }
     let _ = writeln!(s, "  Why           {}", plan.selection_reason);
     let _ = writeln!(s, "  Fits intent   {}", plan.rationale);
@@ -417,7 +435,7 @@ pub fn task(t: &TaskRecord) -> String {
     for p in &t.plans {
         let _ = writeln!(s, "Plan {}  digest {}", p.plan_id, p.short_digest());
         for st in &p.steps {
-            let _ = writeln!(s, "  {}  →  {}", st.capability_id, st.display_command());
+            let _ = writeln!(s, "  {}  →  {}", st.capability_id(), st.display_command());
         }
         let _ = writeln!(s, "  approval      {}", approval_line(p));
     }
