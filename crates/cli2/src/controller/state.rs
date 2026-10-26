@@ -17,9 +17,32 @@ pub struct StepRec {
     pub stderr_tail: String,
     pub output_truncated: bool,
     /// Event sequence numbers, to order executions and changes.
+    pub proposed_seq: i64,
     pub started_seq: Option<i64>,
     pub observed_seq: Option<i64>,
 }
+
+impl StepRec {
+    /// The newest event that concerns this step.
+    pub fn latest_seq(&self) -> i64 {
+        self.observed_seq
+            .or(self.started_seq)
+            .unwrap_or(self.proposed_seq)
+            .max(self.proposed_seq)
+    }
+}
+
+/// A proposal the controller refused, as recorded.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RejectionRec {
+    pub seq: i64,
+    pub reason: String,
+    pub source: String,
+    pub proposed: Option<String>,
+}
+
+/// How many refused proposals the model keeps (the journal keeps all of them).
+pub const MAX_REJECTIONS: usize = 20;
 
 pub struct Model {
     pub task_id: String,
@@ -43,6 +66,10 @@ pub struct Model {
     pub consecutive_plan_failures: u32,
     pub statuses: Vec<CriterionStatus>,
     pub final_report: Option<TaskReport>,
+    /// Proposals the controller refused, oldest first (bounded).
+    pub rejections: Vec<RejectionRec>,
+    /// The working tree when the task began.
+    pub baseline: Option<WorkingTree>,
     pub last_seq: i64,
     /// Sequence number of the newest `criteria_evaluated` event.
     pub last_evaluated_seq: i64,
@@ -111,6 +138,8 @@ pub fn fold(events: &[DevTaskEvent]) -> Option<Model> {
                     consecutive_rejections: 0,
                     consecutive_plan_failures: 0,
                     statuses: vec![],
+                    rejections: vec![],
+                    baseline: None,
                     final_report: None,
                     last_seq: e.seq,
                     last_evaluated_seq: 0,
@@ -180,11 +209,29 @@ fn apply(m: &mut Model, e: &DevTaskEvent) {
                 stdout_tail: String::new(),
                 stderr_tail: String::new(),
                 output_truncated: false,
+                proposed_seq: e.seq,
                 started_seq: None,
                 observed_seq: None,
             });
         }
-        D::ProposalRejected { .. } => m.consecutive_rejections += 1,
+        D::ProposalRejected {
+            reason,
+            source,
+            proposed,
+        } => {
+            m.consecutive_rejections += 1;
+            m.rejections.push(RejectionRec {
+                seq: e.seq,
+                reason: reason.clone(),
+                source: source.clone(),
+                proposed: proposed.clone(),
+            });
+            if m.rejections.len() > MAX_REJECTIONS {
+                m.rejections.remove(0);
+            }
+        }
+        D::WorkingTreeBaseline { tree } => m.baseline = Some(tree.clone()),
+        D::ContextBuilt { .. } => {}
         D::FileRead { .. } => {}
         D::PlanMade {
             step_id,
@@ -565,6 +612,7 @@ mod tests {
             stdout_tail: String::new(),
             stderr_tail: String::new(),
             output_truncated: false,
+            proposed_seq: 0,
             started_seq: Some(started),
             observed_seq: Some(observed),
         }

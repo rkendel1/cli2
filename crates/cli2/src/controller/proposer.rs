@@ -32,6 +32,9 @@ pub struct ProposalContext<'a> {
     /// Capabilities that actually exist here (bounded summary).
     pub capabilities: &'a [CapabilityBrief],
     pub history: Vec<HistoryItem>,
+    /// Bounded, provenance-tagged facts about the project and the task, as of
+    /// this proposal. Rebuilt for every proposal; see [`super::context`].
+    pub context: &'a super::context::ContextSnapshot,
     /// Read project files (recorded as events). The only way a proposer
     /// learns file contents, and the source of the hashes patches depend on.
     pub files: &'a dyn ProjectFiles,

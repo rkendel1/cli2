@@ -146,6 +146,13 @@ Whatever the strategy, the proposer cannot approve, name a command, weaken a
 criterion, or declare anything verified; invalid proposals are recorded
 (`proposal_rejected`) and three in a row block the task.
 
+## What a proposer is given
+
+Each proposal is made from a freshly built, bounded, provenance-tagged context: task
+requirements, criteria and their freshness, previous attempts with distinct failure
+kinds, the working tree with user changes attributed, relevant source and available
+checks. See [development-context.md](development-context.md).
+
 ## Changing files
 
 A step can be a file modification (`Proposal::Edit`, or an outline step with
