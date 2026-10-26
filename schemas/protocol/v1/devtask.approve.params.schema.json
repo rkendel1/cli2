@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "plan_digest": {
+      "description": "The proposed operation's full plan digest, as shown. Anything else is refused.",
+      "type": "string"
+    },
+    "step_id": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id",
+    "step_id",
+    "plan_digest"
+  ],
+  "title": "ApproveStepParams",
+  "type": "object"
+}

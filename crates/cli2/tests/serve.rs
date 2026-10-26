@@ -270,3 +270,175 @@ fn an_independent_python_client_can_use_the_documented_protocol() {
     let _ = s.child.kill();
     let _ = s.child.wait();
 }
+
+// ===================================================== development tasks
+
+fn wait_task(
+    c: &mut Client,
+    id: &str,
+    what: &str,
+    pred: impl Fn(&cli2_protocol::devtask::TaskView) -> bool,
+) -> cli2_protocol::devtask::TaskView {
+    let t = Instant::now();
+    loop {
+        let v = c.task_view(id).unwrap();
+        if pred(&v) {
+            return v;
+        }
+        assert!(
+            t.elapsed() < Duration::from_secs(30),
+            "timed out waiting for {what}; state {:?}",
+            v.state
+        );
+        std::thread::sleep(Duration::from_millis(40));
+    }
+}
+
+#[test]
+fn a_task_survives_a_runtime_crash_without_repeating_its_side_effect_or_claiming_success() {
+    use cli2_core::Check;
+    use cli2_protocol::devtask::*;
+    let env = Env::new();
+    let project = env.work.join("proj");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        project.join("Makefile"),
+        ".PHONY: slow-change check\nslow-change: ## Make the change (slowly)\n\t@mkdir -p src; echo ok > src/validation.js; echo ran >> changes.log; sleep 30\ncheck: ## Check the change exists\n\t@if test -f src/validation.js; then echo \"validation present\"; else exit 1; fi\n",
+    )
+    .unwrap();
+    let project = project.canonicalize().unwrap();
+    let changes = || {
+        std::fs::read_to_string(project.join("changes.log"))
+            .map(|s| s.lines().count())
+            .unwrap_or(0)
+    };
+    let dir = tempfile::Builder::new()
+        .prefix("c2d")
+        .tempdir_in("/tmp")
+        .unwrap();
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    let socket = dir.path().join("s.sock");
+
+    let mut s = serve(&env, &project, &socket);
+    let mut c = Client::connect(&socket, "t").unwrap();
+    let outline = |intent: &str, kind, sat: &[&str]| OutlineStep {
+        kind,
+        objective: intent.into(),
+        intent: intent.into(),
+        selection: None,
+        bindings: Default::default(),
+        satisfies: sat.iter().map(|s| s.to_string()).collect(),
+    };
+    let task = c
+        .create_task(&CreateTaskParams {
+            project: project.display().to_string(),
+            goal: "make the change and check it".into(),
+            criteria: vec![Criterion {
+                id: "present".into(),
+                description: "the change exists".into(),
+                checks: vec![Check::StdoutContains {
+                    text: "validation present".into(),
+                }],
+                after_changes: true,
+                verify_intent: None,
+            }],
+            outline: vec![
+                outline("make slow-change", StepKind::Change, &[]),
+                outline("make check", StepKind::Verify, &["present"]),
+            ],
+            ..Default::default()
+        })
+        .unwrap();
+    c.start_task(&task.task_id).unwrap();
+    let v = wait_task(&mut c, &task.task_id, "approval", |v| {
+        v.state == TaskState::AwaitingApproval
+    });
+    let s1 = v.steps[0].clone();
+    c.approve_step(&task.task_id, &s1.step_id, s1.plan_digest.as_ref().unwrap())
+        .unwrap();
+    let v = wait_task(&mut c, &task.task_id, "executing", |v| {
+        v.state == TaskState::Executing
+    });
+    let exec = v.steps[0].execution_id.clone().unwrap();
+    let t = Instant::now();
+    while changes() == 0 {
+        assert!(t.elapsed() < Duration::from_secs(20));
+        std::thread::sleep(Duration::from_millis(30));
+    }
+    let pid = c
+        .events(&exec, 0, 0)
+        .unwrap()
+        .events
+        .iter()
+        .find_map(|e| match &e.data {
+            cli2_protocol::EventData::StepStarted { pid, .. } => Some(*pid),
+            _ => None,
+        });
+
+    // The runtime dies without any chance to clean up.
+    s.child.kill().unwrap();
+    s.child.wait().unwrap();
+    // SAFETY: cleaning up the orphaned command this test started.
+    unsafe { libc::kill(-(pid.unwrap() as i32), libc::SIGKILL) };
+
+    let mut s2 = serve(&env, &project, &socket);
+    assert_eq!(s2.ready["reconciled_executions"], serde_json::json!([exec]));
+    assert_eq!(s2.ready["resumed_tasks"], serde_json::json!([task.task_id]));
+    let mut c2 = Client::connect(&socket, "t2").unwrap();
+    // The task did not claim success and did not run the change again: it stopped and said why.
+    let v = wait_task(&mut c2, &task.task_id, "blocked", |v| {
+        v.state == TaskState::Blocked
+    });
+    assert!(
+        v.unresolved
+            .iter()
+            .any(|u| u.contains("outcome is unknown")),
+        "{:?}",
+        v.unresolved
+    );
+    assert_eq!(v.steps[0].status, StepStatus::Unknown);
+    assert_eq!(v.criteria[0].outcome, CriterionOutcome::Unverified);
+    assert_eq!(changes(), 1, "the change ran once and is not repeated");
+    std::thread::sleep(Duration::from_millis(600));
+    assert_eq!(
+        c2.task_view(&task.task_id).unwrap().steps.len(),
+        1,
+        "nothing proceeds without a person"
+    );
+
+    // A person resumes; the next step needs its own approval; the unknown step is reported, not hidden.
+    c2.resume_task(&task.task_id).unwrap();
+    let v = wait_task(&mut c2, &task.task_id, "second approval", |v| {
+        v.state == TaskState::AwaitingApproval && v.steps.len() == 2
+    });
+    let s2step = v.steps[1].clone();
+    assert_eq!(s2step.intent, "make check");
+    c2.approve_step(
+        &task.task_id,
+        &s2step.step_id,
+        s2step.plan_digest.as_ref().unwrap(),
+    )
+    .unwrap();
+    let v = wait_task(&mut c2, &task.task_id, "completion", |v| {
+        v.state.is_terminal()
+    });
+    assert_eq!(v.state, TaskState::Completed);
+    let r = c2.task_report(&task.task_id).unwrap();
+    assert_eq!(r.outcome, ReportOutcome::Verified);
+    assert!(
+        r.unverified
+            .iter()
+            .any(|u| u.contains("outcome is unknown")),
+        "the report keeps the uncertainty: {:?}",
+        r.unverified
+    );
+    assert!(r.changes.iter().any(|c| c.contains("unknown")));
+    assert_eq!(changes(), 1);
+    // The whole history is intact and hash-chained.
+    let t = c2
+        .task(r.evidence.last().unwrap().request_id.as_ref().unwrap())
+        .unwrap();
+    assert_eq!(t.document["journal_integrity"], "verified");
+    let _ = s2.child.kill();
+    let _ = s2.child.wait();
+}

@@ -478,7 +478,11 @@ Other applications can use cli2 without scraping terminal output: a typed Rust
 API (`cli2::runtime::Runtime`) and a versioned local protocol over a Unix socket
 (`cli2 serve`). Planning never executes, approval is bound to a plan's exact
 digest, and every execution goes through the same authority path as the CLI. See
-[docs/embedding.md](docs/embedding.md). The CLI needs no background service.
+[docs/embedding.md](docs/embedding.md). On top of it, a **development task
+controller** carries a goal through investigate → propose → plan → approve →
+execute → verify until its acceptance criteria are *verified* (never merely
+"exited 0"), with limits, pause/resume/cancel and crash recovery; see
+[docs/development-tasks.md](docs/development-tasks.md). The CLI needs no background service.
 
 ## Commands
 

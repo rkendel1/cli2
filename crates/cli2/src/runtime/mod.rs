@@ -177,6 +177,12 @@ impl Runtime {
         Ok(c)
     }
 
+    /// The evidence journal, for components built on the runtime (the task
+    /// controller) that record their own hash-chained events.
+    pub(crate) fn journal(&self) -> Result<cli2_evidence::Journal> {
+        Ok(cli2_evidence::Journal::open(&self.config.evidence_dir())?)
+    }
+
     // ------------------------------------------------------------ discovery
 
     /// Discover (or re-discover) capabilities for a project. Explicit: the

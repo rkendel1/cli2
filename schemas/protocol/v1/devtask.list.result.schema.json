@@ -1,0 +1,72 @@
+{
+  "$defs": {
+    "TaskBrief": {
+      "properties": {
+        "goal": {
+          "type": "string"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "project": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/TaskState"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "goal",
+        "project",
+        "state",
+        "paused",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "TaskState": {
+      "oneOf": [
+        {
+          "enum": [
+            "created",
+            "investigating",
+            "planned",
+            "awaiting_approval",
+            "executing",
+            "verifying",
+            "completed",
+            "failed",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "blocked",
+          "description": "Cannot proceed without a person (a rejected/forbidden operation, an\nexecution whose outcome is unknown, no way to verify, …). Resumable.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "tasks": {
+      "items": {
+        "$ref": "#/$defs/TaskBrief"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "tasks"
+  ],
+  "title": "TaskListResult",
+  "type": "object"
+}

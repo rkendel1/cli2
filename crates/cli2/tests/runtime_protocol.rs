@@ -1331,3 +1331,104 @@ fn every_message_on_the_wire_conforms_to_its_published_schema() {
     );
     assert_eq!(err["code"], "not_found");
 }
+
+#[test]
+fn development_task_messages_conform_to_their_published_schemas() {
+    use cli2_protocol::devtask::*;
+    let rig = Rig::new();
+    let proj = rig.proj();
+    let mut s = UnixStream::connect(&rig.socket).unwrap();
+    let mut r = BufReader::new(s.try_clone().unwrap());
+    let mut send = |op: &str, params: Value| -> Value {
+        let req = json!({"id": "x", "op": op, "params": params});
+        validate("request", &req);
+        s.write_all(format!("{req}\n").as_bytes()).unwrap();
+        let mut line = String::new();
+        r.read_line(&mut line).unwrap();
+        let resp: Value = serde_json::from_str(&line).unwrap();
+        validate("response", &resp);
+        if resp["ok"] == true {
+            resp["result"].clone()
+        } else {
+            validate("error", &resp["error"]);
+            resp["error"].clone()
+        }
+    };
+    send(
+        "hello",
+        json!({"client": {"name": "schema"}, "versions": [1]}),
+    );
+    let create = json!({
+        "project": proj, "goal": "greet",
+        "criteria": [{"id": "greeted", "description": "it greets", "checks": [{"type": "stdout_contains", "text": "hello-out"}]}],
+        "outline": [{"kind": "verify", "objective": "greet", "intent": "make hello", "satisfies": ["greeted"]}]
+    });
+    validate("devtask.create.params", &create);
+    let view = send("devtask.create", create);
+    validate("devtask.view", &view);
+    let id = view["task_id"].as_str().unwrap().to_string();
+    validate(
+        "devtask.view",
+        &send("devtask.start", json!({"task_id": id})),
+    );
+    validate(
+        "devtask.list.result",
+        &send("devtask.list", json!({"limit": 5})),
+    );
+    // Wait for the proposal, approve it by digest, and follow the events to the end.
+    let mut after = 0;
+    let mut all = Vec::new();
+    let t = std::time::Instant::now();
+    loop {
+        let v = send("devtask.get", json!({"task_id": id}));
+        validate("devtask.view", &v);
+        if v["state"] == "awaiting_approval" {
+            let step = &v["steps"][0];
+            assert!(
+                v["current_plan"]["plan_id"].is_string(),
+                "the full plan is part of the view"
+            );
+            validate(
+                "devtask.view",
+                &send(
+                    "devtask.approve",
+                    json!({"task_id": id, "step_id": step["step_id"], "plan_digest": step["plan_digest"]}),
+                ),
+            );
+        }
+        let ev = send(
+            "devtask.events",
+            json!({"task_id": id, "after_seq": after, "wait_ms": 300}),
+        );
+        validate("devtask.events.result", &ev);
+        for e in ev["events"].as_array().unwrap() {
+            validate("devtask.event", e);
+            after = e["seq"].as_i64().unwrap();
+            all.push(e.clone());
+        }
+        if ev["finished"] == true {
+            break;
+        }
+        assert!(
+            t.elapsed() < Duration::from_secs(30),
+            "stuck at {}",
+            v["state"]
+        );
+    }
+    assert_eq!(all.last().unwrap()["type"], "completed");
+    validate(
+        "devtask.report",
+        &send("devtask.report", json!({"task_id": id})),
+    );
+    let err = send("devtask.get", json!({"task_id": "dev_nope"}));
+    assert_eq!(err["code"], "not_found");
+    // The unknown-field rule applies here too.
+    assert_eq!(
+        send(
+            "devtask.approve",
+            json!({"task_id": id, "step_id": "s1", "plan_digest": "d", "yes": true})
+        )["code"],
+        "invalid_params"
+    );
+    let _: TaskView = serde_json::from_value(send("devtask.get", json!({"task_id": id}))).unwrap();
+}

@@ -26,6 +26,7 @@ use cli2_protocol::*;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+use crate::controller::Controller;
 use crate::runtime::{Runtime, RuntimeError};
 
 /// Longest Unix socket path the platforms accept (macOS: 104 including NUL).
@@ -42,6 +43,7 @@ pub enum ServerError {
 
 pub struct Server {
     runtime: Arc<Runtime>,
+    controller: Arc<Controller>,
     listener: UnixListener,
     socket: PathBuf,
     _lock: std::fs::File,
@@ -89,6 +91,16 @@ fn check_private_dir(dir: &Path) -> Result<(), ServerError> {
 impl Server {
     /// Bind the socket. Fails if another runtime already owns this socket.
     pub fn bind(runtime: Arc<Runtime>, socket: &Path) -> Result<Self, ServerError> {
+        let controller = Controller::new(runtime.clone());
+        Self::bind_with(runtime, controller, socket)
+    }
+
+    /// Bind with an existing task controller (to register strategies first).
+    pub fn bind_with(
+        runtime: Arc<Runtime>,
+        controller: Arc<Controller>,
+        socket: &Path,
+    ) -> Result<Self, ServerError> {
         if socket.as_os_str().len() > MAX_SOCKET_PATH {
             return Err(ServerError::Setup(format!(
                 "the socket path is too long for a Unix socket ({} > {MAX_SOCKET_PATH}): {}; use --socket with a shorter path",
@@ -136,12 +148,17 @@ impl Server {
         listener.set_nonblocking(true)?;
         Ok(Self {
             runtime,
+            controller,
             listener,
             socket: socket.to_path_buf(),
             _lock: lock,
             stop: Arc::new(AtomicBool::new(false)),
             connections: Arc::new(AtomicUsize::new(0)),
         })
+    }
+
+    pub fn controller(&self) -> Arc<Controller> {
+        self.controller.clone()
     }
 
     pub fn socket(&self) -> &Path {
@@ -170,6 +187,7 @@ impl Server {
             match self.listener.accept() {
                 Ok((stream, _)) => {
                     let runtime = self.runtime.clone();
+                    let controller = self.controller.clone();
                     let stop = self.stop.clone();
                     let counter = self.connections.clone();
                     if counter.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
@@ -188,7 +206,7 @@ impl Server {
                         continue;
                     }
                     std::thread::spawn(move || {
-                        let _ = handle_connection(runtime, stream, stop);
+                        let _ = handle_connection(runtime, controller, stream, stop);
                         counter.fetch_sub(1, Ordering::SeqCst);
                     });
                 }
@@ -302,6 +320,7 @@ fn read_line(reader: &mut BufReader<UnixStream>, stop: &AtomicBool) -> std::io::
 
 fn handle_connection(
     runtime: Arc<Runtime>,
+    controller: Arc<Controller>,
     stream: UnixStream,
     stop: Arc<AtomicBool>,
 ) -> std::io::Result<()> {
@@ -354,7 +373,7 @@ fn handle_connection(
                     format!("not a valid request: {e}"),
                 ),
             ),
-            Ok(req) => dispatch(&runtime, &mut negotiated, req),
+            Ok(req) => dispatch(&runtime, &controller, &mut negotiated, req),
         };
         write_line(&mut writer, &response)?;
     }
@@ -390,7 +409,12 @@ pub fn negotiate(client: &[u32]) -> Option<u32> {
         .max()
 }
 
-fn dispatch(rt: &Runtime, negotiated: &mut Option<u32>, req: Request) -> Response {
+fn dispatch(
+    rt: &Runtime,
+    ctl: &Arc<Controller>,
+    negotiated: &mut Option<u32>,
+    req: Request,
+) -> Response {
     let fail = |e: ErrorBody| Response::err(req.id.clone(), e);
     if req.op == ops::HELLO {
         let p: HelloParams = match params(&req) {
@@ -470,6 +494,17 @@ fn dispatch(rt: &Runtime, negotiated: &mut Option<u32>, req: Request) -> Respons
         ops::HISTORY_SEARCH => with!(HistorySearchParams, |p| rt.history_search(&p)),
         ops::WORKFLOW_GET => with!(WorkflowParams, |p| rt.workflow(&p)),
         ops::WORKFLOW_REPLAN => with!(WorkflowParams, |p| rt.workflow_replan(&p)),
+        ops::DEVTASK_CREATE => with!(devtask::CreateTaskParams, |p| ctl.create(p)),
+        ops::DEVTASK_GET => with!(devtask::TaskIdParams, |p| ctl.get(&p.task_id)),
+        ops::DEVTASK_LIST => with!(devtask::TaskListParams, |p| ctl.list(p.limit)),
+        ops::DEVTASK_START => with!(devtask::TaskIdParams, |p| ctl.start(&p.task_id)),
+        ops::DEVTASK_APPROVE => with!(devtask::ApproveStepParams, |p| ctl.approve(p)),
+        ops::DEVTASK_REJECT => with!(devtask::RejectStepParams, |p| ctl.reject(p)),
+        ops::DEVTASK_PAUSE => with!(devtask::TaskIdParams, |p| ctl.pause(&p.task_id)),
+        ops::DEVTASK_RESUME => with!(devtask::TaskIdParams, |p| ctl.resume(&p.task_id)),
+        ops::DEVTASK_CANCEL => with!(devtask::TaskIdParams, |p| ctl.cancel(&p.task_id, None)),
+        ops::DEVTASK_EVENTS => with!(devtask::TaskEventsParams, |p| ctl.events(&p)),
+        ops::DEVTASK_REPORT => with!(devtask::TaskIdParams, |p| ctl.report(&p.task_id)),
         _ => fail(ErrorBody::new(
             ErrorCode::UnsupportedOperation,
             "unsupported operation",

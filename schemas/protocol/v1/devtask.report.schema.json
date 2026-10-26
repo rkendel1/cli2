@@ -1,0 +1,194 @@
+{
+  "$defs": {
+    "CriterionOutcome": {
+      "oneOf": [
+        {
+          "const": "passed",
+          "description": "A fresh verified execution satisfied it.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "An execution that should have satisfied it failed or failed verification.",
+          "type": "string"
+        },
+        {
+          "const": "unverified",
+          "description": "Nothing has established it (not run yet, run but not verified, or stale).",
+          "type": "string"
+        }
+      ]
+    },
+    "CriterionStatus": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "execution_id": {
+          "description": "The execution this judgement rests on.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/CriterionOutcome"
+        },
+        "reason": {
+          "description": "Why, in plain words.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "outcome",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "EvidenceRef": {
+      "properties": {
+        "execution_id": {
+          "type": "string"
+        },
+        "plan_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "step_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "step_id",
+        "execution_id"
+      ],
+      "type": "object"
+    },
+    "ReportOutcome": {
+      "oneOf": [
+        {
+          "enum": [
+            "failed",
+            "blocked",
+            "cancelled"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "verified",
+          "description": "Every acceptance criterion was verified.",
+          "type": "string"
+        },
+        {
+          "const": "partially_verified",
+          "description": "Work was done but not everything was verified.",
+          "type": "string"
+        },
+        {
+          "const": "in_progress",
+          "description": "Still in progress; this is an interim report.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "attempts": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "changes": {
+      "description": "What changes were executed (each is an executed, approved operation).",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/EvidenceRef"
+      },
+      "type": "array"
+    },
+    "failed": {
+      "description": "Criteria that failed.",
+      "items": {
+        "$ref": "#/$defs/CriterionStatus"
+      },
+      "type": "array"
+    },
+    "goal": {
+      "type": "string"
+    },
+    "outcome": {
+      "$ref": "#/$defs/ReportOutcome"
+    },
+    "remaining_work": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "steps_taken": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "summary": {
+      "description": "A one-paragraph, plain statement of what happened.",
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "unverified": {
+      "description": "Things that ran but were not verified, or could not be.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "verified": {
+      "description": "Criteria whose verification passed, with the evidence for each.",
+      "items": {
+        "$ref": "#/$defs/CriterionStatus"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "task_id",
+    "goal",
+    "outcome",
+    "summary",
+    "verified",
+    "failed",
+    "unverified",
+    "changes",
+    "remaining_work",
+    "steps_taken",
+    "attempts",
+    "evidence"
+  ],
+  "title": "TaskReport",
+  "type": "object"
+}

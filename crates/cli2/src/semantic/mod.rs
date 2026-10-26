@@ -125,6 +125,9 @@ struct ConfigFile {
     /// Validated by `output::OutputSettings`.
     #[allow(dead_code)]
     output: Option<serde_json::Value>,
+    /// Read by the task controller.
+    #[allow(dead_code)]
+    controller: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]

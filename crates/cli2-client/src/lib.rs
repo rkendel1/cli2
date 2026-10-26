@@ -371,4 +371,124 @@ impl Client {
             },
         )
     }
+
+    // ---------------------------------------------------------- development tasks
+
+    pub fn create_task(
+        &mut self,
+        p: &devtask::CreateTaskParams,
+    ) -> Result<devtask::TaskView, ClientError> {
+        self.call(ops::DEVTASK_CREATE, p)
+    }
+
+    pub fn task_view(&mut self, task_id: &str) -> Result<devtask::TaskView, ClientError> {
+        self.call(
+            ops::DEVTASK_GET,
+            &devtask::TaskIdParams {
+                task_id: task_id.into(),
+            },
+        )
+    }
+
+    pub fn task_list(&mut self, limit: usize) -> Result<devtask::TaskListResult, ClientError> {
+        self.call(
+            ops::DEVTASK_LIST,
+            &devtask::TaskListParams { limit: Some(limit) },
+        )
+    }
+
+    pub fn start_task(&mut self, task_id: &str) -> Result<devtask::TaskView, ClientError> {
+        self.call(
+            ops::DEVTASK_START,
+            &devtask::TaskIdParams {
+                task_id: task_id.into(),
+            },
+        )
+    }
+
+    /// Approve the specific operation the task proposed, naming its full digest.
+    pub fn approve_step(
+        &mut self,
+        task_id: &str,
+        step_id: &str,
+        plan_digest: &str,
+    ) -> Result<devtask::TaskView, ClientError> {
+        self.call(
+            ops::DEVTASK_APPROVE,
+            &devtask::ApproveStepParams {
+                task_id: task_id.into(),
+                step_id: step_id.into(),
+                plan_digest: plan_digest.into(),
+            },
+        )
+    }
+
+    pub fn reject_step(
+        &mut self,
+        task_id: &str,
+        step_id: &str,
+        reason: Option<&str>,
+    ) -> Result<devtask::TaskView, ClientError> {
+        self.call(
+            ops::DEVTASK_REJECT,
+            &devtask::RejectStepParams {
+                task_id: task_id.into(),
+                step_id: step_id.into(),
+                reason: reason.map(String::from),
+            },
+        )
+    }
+
+    pub fn pause_task(&mut self, task_id: &str) -> Result<devtask::TaskView, ClientError> {
+        self.call(
+            ops::DEVTASK_PAUSE,
+            &devtask::TaskIdParams {
+                task_id: task_id.into(),
+            },
+        )
+    }
+
+    pub fn resume_task(&mut self, task_id: &str) -> Result<devtask::TaskView, ClientError> {
+        self.call(
+            ops::DEVTASK_RESUME,
+            &devtask::TaskIdParams {
+                task_id: task_id.into(),
+            },
+        )
+    }
+
+    pub fn cancel_task(&mut self, task_id: &str) -> Result<devtask::TaskView, ClientError> {
+        self.call(
+            ops::DEVTASK_CANCEL,
+            &devtask::TaskIdParams {
+                task_id: task_id.into(),
+            },
+        )
+    }
+
+    pub fn task_events(
+        &mut self,
+        task_id: &str,
+        after_seq: i64,
+        wait_ms: u64,
+    ) -> Result<devtask::TaskEventsResult, ClientError> {
+        self.call(
+            ops::DEVTASK_EVENTS,
+            &devtask::TaskEventsParams {
+                task_id: task_id.into(),
+                after_seq,
+                wait_ms,
+                limit: None,
+            },
+        )
+    }
+
+    pub fn task_report(&mut self, task_id: &str) -> Result<devtask::TaskReport, ClientError> {
+        self.call(
+            ops::DEVTASK_REPORT,
+            &devtask::TaskIdParams {
+                task_id: task_id.into(),
+            },
+        )
+    }
 }

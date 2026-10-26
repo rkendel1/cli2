@@ -1,0 +1,255 @@
+{
+  "$defs": {
+    "Check": {
+      "description": "A deterministic check evaluated by runtime code after execution.",
+      "oneOf": [
+        {
+          "description": "The process exit status equals `expected`. This is process-level evidence\nonly: it never by itself establishes task-level success.",
+          "properties": {
+            "expected": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": {
+              "const": "process_exit_status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "expected"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A file exists after execution (optionally modified after the step started).",
+          "properties": {
+            "modified_after_start": {
+              "default": false,
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "const": "file_exists",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A file or directory exists after execution.",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "const": "path_exists",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Captured standard output contains the given text.",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "const": "stdout_contains",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Criterion": {
+      "additionalProperties": false,
+      "description": "What must be true for the task to be complete, and how the *runtime* will\ncheck it. The checks are attached to the plan of every step that claims to\nsatisfy the criterion; a proposer cannot weaken or replace them.",
+      "properties": {
+        "after_changes": {
+          "default": false,
+          "description": "The verification must have run after the most recent change.",
+          "type": "boolean"
+        },
+        "checks": {
+          "description": "Task-level checks (at least one that is not an exit-status check).",
+          "items": {
+            "$ref": "#/$defs/Check"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "description": "`[a-z0-9_-]`, unique within the task.",
+          "type": "string"
+        },
+        "verify_intent": {
+          "description": "A suggested intent to satisfy it (used by the outline strategy).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "checks"
+      ],
+      "type": "object"
+    },
+    "Limits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_attempts": {
+          "default": 3,
+          "description": "Most failed verifications/executions before the task stops trying.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_steps": {
+          "default": 10,
+          "description": "Most steps (proposals that reach planning) a task may use.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "OutlineStep": {
+      "additionalProperties": false,
+      "description": "One step of a client-supplied outline (the deterministic `outline` strategy).",
+      "properties": {
+        "bindings": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "type": "object"
+        },
+        "intent": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/StepKind"
+        },
+        "objective": {
+          "type": "string"
+        },
+        "satisfies": {
+          "default": [],
+          "description": "Criteria this step is meant to satisfy.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "selection": {
+          "description": "A discovered capability to pin the step to (must exist).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "objective",
+        "intent"
+      ],
+      "type": "object"
+    },
+    "StepKind": {
+      "oneOf": [
+        {
+          "const": "investigate",
+          "description": "Read-only exploration.",
+          "type": "string"
+        },
+        {
+          "const": "change",
+          "description": "Changes the project (anything that must be re-verified afterwards).",
+          "type": "string"
+        },
+        {
+          "const": "verify",
+          "description": "Runs checks (tests, lint, a build) to satisfy criteria.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "criteria": {
+      "default": [],
+      "description": "Acceptance criteria. Without any, a task can never be completed.",
+      "items": {
+        "$ref": "#/$defs/Criterion"
+      },
+      "type": "array"
+    },
+    "goal": {
+      "description": "The goal, in the user's words.",
+      "type": "string"
+    },
+    "idempotency_key": {
+      "description": "Retrying with the same key returns the same task.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "limits": {
+      "$ref": "#/$defs/Limits",
+      "default": {
+        "max_attempts": 3,
+        "max_steps": 10
+      }
+    },
+    "outline": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/OutlineStep"
+      },
+      "type": "array"
+    },
+    "project": {
+      "type": "string"
+    },
+    "strategy": {
+      "description": "`outline` (default) or a registered strategy such as `model`.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "project",
+    "goal"
+  ],
+  "title": "CreateTaskParams",
+  "type": "object"
+}
