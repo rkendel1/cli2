@@ -55,6 +55,8 @@ pub struct ProcessSpec {
     pub kill_grace: Duration,
     /// Optional live observer (status/output events).
     pub observer: Option<Observer>,
+    /// When set, the child gets exactly this environment and nothing inherited.
+    pub env: Option<Vec<(String, String)>>,
 }
 
 impl ProcessSpec {
@@ -72,6 +74,7 @@ impl ProcessSpec {
             max_output_bytes: DEFAULT_MAX_OUTPUT,
             kill_grace: Duration::from_secs(2),
             observer: None,
+            env: None,
         }
     }
 }
@@ -167,6 +170,9 @@ pub fn run(spec: &ProcessSpec, cancel: &CancelToken) -> ProcessOutcome {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(env) = &spec.env {
+        cmd.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

@@ -150,6 +150,28 @@ impl Default for Limits {
     }
 }
 
+/// One path in `git status --porcelain` output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TreeEntry {
+    pub path: String,
+    /// The two-character porcelain status (`" M"`, `"??"`, `"A "`, ...).
+    pub status: String,
+}
+
+/// The working tree as `git status` reports it. If git, or a repository, is
+/// not available that is said explicitly: it is never reported as clean.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkingTree {
+    pub available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// Sorted by path; bounded (see `entries_total`).
+    pub entries: Vec<TreeEntry>,
+    pub entries_total: usize,
+}
+
 /// A patch to one file, against a known version. It is a *request*: the
 /// runtime plans it, a person approves the exact plan, and the runtime applies it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -480,6 +502,27 @@ pub enum DevTaskEventData {
     ProposalRejected {
         reason: String,
         source: String,
+        /// A bounded summary of what was proposed (so the next proposal can
+        /// see what not to repeat). Free text from the proposer: data only.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        proposed: Option<String>,
+    },
+    /// The project's working tree when the task began investigating. Anything
+    /// already modified or untracked then belongs to the user, not to the task.
+    WorkingTreeBaseline {
+        tree: WorkingTree,
+    },
+    /// A proposer was given a context. Only its identity and coverage are
+    /// recorded; the content is derived from the journal and the project.
+    ContextBuilt {
+        digest: String,
+        /// Sequence number of the newest task event the context reflects.
+        as_of_seq: i64,
+        bytes: u64,
+        max_bytes: u64,
+        items: u32,
+        omitted: u32,
+        truncated: u32,
     },
     PlanMade {
         step_id: String,

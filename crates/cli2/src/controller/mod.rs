@@ -28,6 +28,7 @@
 //! * **Bounded.** Step and failed-attempt limits end a task with a precise
 //!   report.
 
+pub mod context;
 pub mod proposer;
 pub mod state;
 
@@ -67,6 +68,7 @@ struct Cell {
 pub struct Controller {
     runtime: Arc<Runtime>,
     strategies: Mutex<HashMap<String, Arc<dyn StrategyFactory>>>,
+    context_budget: Mutex<context::ContextBudget>,
     cells: Mutex<HashMap<String, Arc<Cell>>>,
     stopping: AtomicBool,
 }
@@ -79,9 +81,11 @@ enum Tick {
 
 impl Controller {
     pub fn new(runtime: Arc<Runtime>) -> Arc<Self> {
+        let runtime_home = runtime.config().home.clone();
         let c = Arc::new(Self {
             runtime,
             strategies: Mutex::new(HashMap::new()),
+            context_budget: Mutex::new(budget_from_config(&runtime_home)),
             cells: Mutex::new(HashMap::new()),
             stopping: AtomicBool::new(false),
         });
@@ -95,6 +99,25 @@ impl Controller {
             c.register_model(Arc::new(client));
         }
         c
+    }
+
+    /// Set the size budget of the context given to proposers (bytes of the
+    /// serialized snapshot). Takes effect for the next proposal.
+    pub fn set_context_budget(&self, budget: context::ContextBudget) -> Result<()> {
+        budget
+            .validate()
+            .map_err(|e| err(ErrorCode::InvalidParams, e))?;
+        *self.context_budget.lock().unwrap() = budget;
+        Ok(())
+    }
+
+    /// The context a proposer would be given for this task right now. Read-only.
+    pub fn context(&self, task_id: &str) -> Result<context::ContextSnapshot> {
+        let j = self.runtime.journal()?;
+        let m = self.load(&j, task_id)?;
+        let budget = self.context_budget.lock().unwrap().clone();
+        let g = context::gather(&self.runtime, &m, &budget);
+        context::build(&m, &g, &budget).map_err(|e| err(ErrorCode::Internal, e.to_string()))
     }
 
     /// Register a named strategy (tests and applications add their own).
@@ -848,6 +871,17 @@ impl Controller {
             &m.task_id,
             DevTaskEventData::Investigated { investigation },
         )?;
+        // What was already changed in the tree belongs to the user, not to this task.
+        let tree = context::git_status(
+            std::path::Path::new(&m.project),
+            &self.runtime.config().path_var,
+            self.context_budget.lock().unwrap().max_tree_entries * 2,
+        );
+        self.append(
+            j,
+            &m.task_id,
+            DevTaskEventData::WorkingTreeBaseline { tree },
+        )?;
         Ok(Tick::Progress)
     }
 
@@ -920,6 +954,33 @@ impl Controller {
                 stderr_tail: s.stderr_tail.clone(),
             })
             .collect();
+        // Rebuilt for every proposal from the journal and the project as they are now.
+        let budget = self.context_budget.lock().unwrap().clone();
+        let gathered = context::gather(&self.runtime, m, &budget);
+        let snapshot = match context::build(m, &gathered, &budget) {
+            Ok(s) => s,
+            Err(e) => {
+                self.block(
+                    j,
+                    m,
+                    &format!("could not build the proposer's context: {e}"),
+                )?;
+                return Ok(Tick::Idle);
+            }
+        };
+        self.append(
+            j,
+            &m.task_id,
+            DevTaskEventData::ContextBuilt {
+                digest: snapshot.digest.clone(),
+                as_of_seq: snapshot.as_of_seq,
+                bytes: snapshot.size() as u64,
+                max_bytes: snapshot.max_bytes as u64,
+                items: snapshot.items.len() as u32,
+                omitted: (snapshot.manifest.omitted.len() + snapshot.manifest.omitted_more) as u32,
+                truncated: snapshot.manifest.cut.len() as u32,
+            },
+        )?;
         let files = RecordingFiles::new(&self.runtime, &m.project);
         let ctx = ProposalContext {
             task_id: &m.task_id,
@@ -930,13 +991,14 @@ impl Controller {
             outline: &m.outline,
             capabilities: &briefs,
             history,
+            context: &snapshot,
             files: &files,
             limits: &m.limits,
             steps_used: m.steps.len() as u32,
             attempts: m.attempts,
         };
         let source = proposer.name();
-        let reject = |reason: String| -> Result<Tick> {
+        let reject = |reason: String, proposed: Option<String>| -> Result<Tick> {
             let __c = self.cell(&m.task_id);
             let _g = __c.op.lock().unwrap();
             let fresh = self.load(j, &m.task_id)?;
@@ -949,6 +1011,7 @@ impl Controller {
                 DevTaskEventData::ProposalRejected {
                     reason: reason.clone(),
                     source: source.clone(),
+                    proposed: proposed.clone(),
                 },
             )?;
             if fresh.consecutive_rejections + 1 >= 3 {
@@ -965,10 +1028,10 @@ impl Controller {
         // What the proposer read is part of the task's record, whatever it proposed.
         files.record(self, j, &m.task_id)?;
         match proposal {
-            Err(e) => reject(e),
+            Err(e) => reject(e, None),
             Ok(Proposal::Edit(edit)) => {
                 if let Err(reason) = validate_edit(&edit) {
-                    return reject(reason);
+                    return reject(reason, Some(summarize_edit(&edit)));
                 }
                 let __c = self.cell(&m.task_id);
                 let _g = __c.op.lock().unwrap();
@@ -1030,16 +1093,19 @@ impl Controller {
                 if unmet.is_empty() {
                     return Ok(Tick::Idle);
                 }
-                reject(format!(
-                    "the proposer said it is done, but these criteria are not verified: {}{}",
-                    unmet.join(", "),
-                    note.map(|n| format!(" (its note: {n})"))
-                        .unwrap_or_default()
-                ))
+                reject(
+                    format!(
+                        "the proposer said it is done, but these criteria are not verified: {}{}",
+                        unmet.join(", "),
+                        note.map(|n| format!(" (its note: {n})"))
+                            .unwrap_or_default()
+                    ),
+                    Some("done".into()),
+                )
             }
             Ok(Proposal::Step(step)) => {
                 if let Err(reason) = validate(&step, &m.criteria, &discovered) {
-                    return reject(reason);
+                    return reject(reason, Some(summarize_step(&step)));
                 }
                 let __c = self.cell(&m.task_id);
                 let _g = __c.op.lock().unwrap();
@@ -1492,6 +1558,41 @@ fn tail_of(s: &str, n: usize) -> String {
 
 /// Summaries of capabilities that can actually be planned: project tasks, and
 /// executables whose interface is understood.
+/// A bounded one-line description of a proposal, kept with its rejection.
+fn summarize_step(s: &ProposedStep) -> String {
+    clip(
+        &format!(
+            "step kind={:?} intent={:?} selection={:?} satisfies={:?}",
+            s.kind, s.intent, s.selection, s.satisfies
+        ),
+        400,
+    )
+}
+
+fn summarize_edit(e: &ProposedEdit) -> String {
+    clip(
+        &format!(
+            "edit path={:?} expected_sha256={:?} hunks={} objective={:?}",
+            e.edit.path,
+            e.edit.expected_sha256,
+            e.edit.hunks.len(),
+            e.objective
+        ),
+        400,
+    )
+}
+
+fn clip(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        return s.to_string();
+    }
+    let mut end = max;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &s[..end])
+}
+
 fn briefs(caps: &[Capability]) -> Vec<CapabilityBrief> {
     let mut v: Vec<CapabilityBrief> = caps
         .iter()
@@ -1568,6 +1669,20 @@ impl ProjectFiles for RecordingFiles<'_> {
             content: r.content,
         })
     }
+}
+
+/// `controller.context_max_bytes` in config.json (otherwise the default budget).
+fn budget_from_config(home: &std::path::Path) -> context::ContextBudget {
+    let mut b = context::ContextBudget::default();
+    let n = std::fs::read_to_string(home.join("config.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("controller")?.get("context_max_bytes")?.as_u64());
+    if let Some(n) = n {
+        let n = (n as usize).clamp(context::MIN_CONTEXT_BYTES, 4 * 1024 * 1024);
+        b.max_bytes = n;
+    }
+    b
 }
 
 /// `controller.model_command` in config.json: a local program used as the model.

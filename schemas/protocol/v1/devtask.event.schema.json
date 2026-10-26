@@ -775,6 +775,23 @@
         }
       ]
     },
+    "TreeEntry": {
+      "description": "One path in `git status --porcelain` output.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "status": {
+          "description": "The two-character porcelain status (`\" M\"`, `\"??\"`, `\"A \"`, ...).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "status"
+      ],
+      "type": "object"
+    },
     "VerificationStatus": {
       "oneOf": [
         {
@@ -798,6 +815,44 @@
           "type": "string"
         }
       ]
+    },
+    "WorkingTree": {
+      "description": "The working tree as `git status` reports it. If git, or a repository, is\nnot available that is said explicitly: it is never reported as clean.",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "entries": {
+          "description": "Sorted by path; bounded (see `entries_total`).",
+          "items": {
+            "$ref": "#/$defs/TreeEntry"
+          },
+          "type": "array"
+        },
+        "entries_total": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unavailable_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "entries",
+        "entries_total"
+      ],
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -997,6 +1052,13 @@
     {
       "description": "A proposal the controller refused (fabricated capability, unknown\ncriterion, over a limit, malformed).",
       "properties": {
+        "proposed": {
+          "description": "A bounded summary of what was proposed (so the next proposal can\nsee what not to repeat). Free text from the proposer: data only.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "reason": {
           "type": "string"
         },
@@ -1012,6 +1074,76 @@
         "type",
         "reason",
         "source"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "The project's working tree when the task began investigating. Anything\nalready modified or untracked then belongs to the user, not to the task.",
+      "properties": {
+        "tree": {
+          "$ref": "#/$defs/WorkingTree"
+        },
+        "type": {
+          "const": "working_tree_baseline",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "tree"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "A proposer was given a context. Only its identity and coverage are\nrecorded; the content is derived from the journal and the project.",
+      "properties": {
+        "as_of_seq": {
+          "description": "Sequence number of the newest task event the context reflects.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "items": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "omitted": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "context_built",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "digest",
+        "as_of_seq",
+        "bytes",
+        "max_bytes",
+        "items",
+        "omitted",
+        "truncated"
       ],
       "type": "object"
     },
