@@ -361,3 +361,102 @@ Run one area, e.g. the end-to-end demonstration, with:
 ```sh
 cargo test -p cli2 --test acceptance end_to_end -- --nocapture
 ```
+
+
+## Semantic resolution with Apple Foundation Models (slice 2)
+
+An optional, on-device model helps connect an intent to discovered capabilities
+whose names or descriptions do not share its words
+(`cli2 "find all references to authentication" --resolver apple-fm`).
+
+**The model is a semantic resolver, not an agent.** It sees only a bounded list
+of candidates retrieved from the index and may only reorder them or say none
+fit. The Rust runtime validates every response (schema, request ID, every
+capability ID must have been submitted, no duplicates, consistent ranks) and
+then the unchanged plan builder constructs the invocation from the capability's
+known interface. Authority policy, approval, execution, verification and
+evidence are untouched. A model cannot add capabilities, invent arguments,
+declare effects safe, approve, or claim success. Unknown interfaces are still
+reported (`--capture-help`), never guessed.
+
+Inference uses `SystemLanguageModel.default` through a compiled Swift helper
+(`integrations/apple-foundation-models`, `cli2-apple-fm`) that speaks one JSON
+request on stdin / one JSON response on stdout. No network, API key, or account
+is involved; the helper runs nothing and gets a minimal environment.
+
+### Reproducible setup (macOS 26+, Apple Silicon, Apple Intelligence enabled)
+
+```sh
+cargo --version && swift --version && xcrun --show-sdk-version   # 1. toolchains
+swift build -c release --package-path integrations/apple-foundation-models   # 3. helper (optional component)
+cargo build --release                                            # 4. Rust workspace (no model needed)
+cargo test                                                       # 5. Rust tests (fake bridge; live tests skip if no model)
+swift test --package-path integrations/apple-foundation-models   # 6. Swift tests
+target/release/cli2 model status                                 # 7. runtime availability check
+target/release/cli2 model test                                   # 8. harmless live inference
+target/release/cli2 model benchmark                              # 9. evaluation (real runs only)
+cd your/project && cli2 scan && cli2 inventory                   # 10. demo
+cli2 "find all references to authentication" --resolver apple-fm --no-exec
+cli2 plan "run the project tests" --resolver apple-fm
+cli2 "run the project tests" --resolver auto
+```
+
+The helper is found via `CLI2_APPLE_FM_BRIDGE`, `resolver.bridge_path`, next to
+the `cli2` binary, the repository's `.build/release`, or `$CLI2_HOME/bin`.
+
+### Modes and configuration
+
+| `--resolver` | Behaviour |
+|---|---|
+| `deterministic` | Existing resolver only; the bridge is never launched. |
+| `apple-fm` | Model ranking. If the model fails: fall back to a deterministic plan if one exists and `fallback` is `deterministic`; otherwise exit 11 (`semantic_resolver_unavailable`). |
+| `auto` | Deterministic first; the model is consulted only when it cannot plan. Any model failure falls back. |
+
+Exact matches and caller selections (`--pick`) are never reranked. `$CLI2_HOME/config.json` (validated; unknown keys are errors):
+
+```json
+{ "resolver": {
+    "provider": "apple-foundation-models",
+    "fallback": "deterministic",
+    "mode": "auto",
+    "bridge_path": "/path/to/cli2-apple-fm",
+    "timeout_secs": 30,
+    "max_candidates": 24 } }
+```
+
+`provider` defaults to `none` (deterministic only); `mode` defaults to `auto`
+when a provider is set; `timeout_secs` is 1-300; `max_candidates` is 1-40.
+
+### Commands
+
+`cli2 model status [--json]` reports readiness from the framework's own runtime
+availability (ready / model not ready / device not eligible / Apple Intelligence
+not enabled / unavailable-unknown / bridge missing / launch failed / timed out /
+inference failed / unsupported platform); exit 1 when not ready.
+`cli2 model test` ranks three synthetic candidates and checks for a validated
+structured result. `cli2 model benchmark` runs `evals/apple-foundation-models.jsonl`
+against the real PATH inventory and fixture projects.
+
+### Evidence
+
+Each resolution records a `semantic_resolution` event (`cli2 task show`): mode,
+which resolver produced the ordering, whether fallback occurred and why, bridge
+version, bridge request ID, submitted candidate IDs, order before/after,
+validation outcome, rankings with the model's (non-authoritative) reasons,
+availability, latency, and errors. Prompts are not stored.
+
+### Measured results (this Mac, macOS 27.0, arm64; `evals/results/`)
+
+12 cases, one run. Deterministic vs Apple ordering over identical candidate sets:
+top-1 38% vs 62%, top-3 recall 75% vs 62%; invalid capability references 0%,
+invalid plans 0%, availability 100%, fallback 0%; mean latency about 2.6 s per
+request (two on-device calls). The model's ranking matched expectations in 8 of
+12 cases. Known misses: it picked `npm:build` for "Deploy the application" (no
+deploy task exists) and did not preserve the ambiguity of "verify the code".
+The model is small and non-deterministic across runs, and with 12 cases these
+figures are indicative only. Safety properties (validation, policy gating) do
+not depend on its accuracy.
+
+Note: `end_to_end_unfamiliar_executable` in the first-slice acceptance tests
+fails on this Mac both before and after this change (macOS ships `/usr/bin/write`,
+which outranks the `mkreport` fixture).

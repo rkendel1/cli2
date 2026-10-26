@@ -14,9 +14,11 @@ use cli2_execution::{
 };
 use cli2_index::{Index, IndexError, ReconcileReport, ENV_SCOPE};
 use cli2_resolver::{
-    resolve, HistoryStats, NoInference, Resolution, ResolveContext, SemanticRanker,
+    resolve, HistoryStats, NoInference, Resolution, ResolveContext, SemanticRanker, SemanticReport,
 };
 use serde::Serialize;
+
+use crate::semantic::{AppleFmRanker, Fallback, Provider, ResolverMode, ResolverSettings, PROVIDER_ID};
 
 /// Default per-step timeout.
 pub const DEFAULT_TIMEOUT_SECS: u64 = 600;
@@ -32,6 +34,9 @@ pub struct Config {
     pub path_var: OsString,
     pub default_timeout_secs: u64,
     pub policy: Policy,
+    /// Resolver settings; when `None`, read from `$CLI2_HOME/config.json`
+    /// (absent file means deterministic resolution only).
+    pub resolver: Option<ResolverSettings>,
 }
 
 impl Config {
@@ -69,6 +74,7 @@ impl Config {
             path_var: std::env::var_os("PATH").unwrap_or_default(),
             default_timeout_secs: DEFAULT_TIMEOUT_SECS,
             policy,
+            resolver: None,
         })
     }
 
@@ -95,6 +101,10 @@ pub enum EngineError {
     NotFound(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    /// `--resolver apple-fm` was requested, the model could not be used, and
+    /// no deterministic resolution could stand in for it.
+    #[error("{0}")]
+    SemanticUnavailable(String),
 }
 
 impl From<IndexError> for EngineError {
@@ -117,6 +127,7 @@ impl EngineError {
             EngineError::Journal(_) => "journal_error",
             EngineError::Invalid(_) => "invalid_input",
             EngineError::Io(_) => "io_error",
+            EngineError::SemanticUnavailable(_) => "semantic_resolver_unavailable",
         }
     }
 
@@ -125,6 +136,7 @@ impl EngineError {
         match self {
             EngineError::IndexCorrupt(_) => 9,
             EngineError::Invalid(_) | EngineError::NotFound(_) => 2,
+            EngineError::SemanticUnavailable(_) => 11,
             EngineError::Journal(JournalError::NotFound(_)) => 2,
             _ => 10,
         }
@@ -134,6 +146,9 @@ impl EngineError {
         match self {
             EngineError::IndexCorrupt(_) => {
                 Some("run `cli2 scan --rebuild` to move the corrupt index aside and rebuild it from discovery")
+            }
+            EngineError::SemanticUnavailable(_) => {
+                Some("run `cli2 model status` for details, or use `--resolver deterministic` / `--resolver auto`")
             }
             _ => None,
         }
@@ -213,35 +228,96 @@ pub struct Engine {
     journal: Journal,
     ranker: Box<dyn SemanticRanker>,
     cancel: CancelToken,
+    settings: ResolverSettings,
+    /// `None`: legacy behaviour (run the installed ranker, single pass).
+    mode: Option<ResolverMode>,
+    semantic: Option<AppleFmRanker>,
+    last_semantic: Option<SemanticEvent>,
+}
+
+/// The semantic-resolution evidence event: which resolver ordered the
+/// candidates, what the model did, and whether a fallback occurred.
+#[derive(Debug, Clone, Serialize)]
+pub struct SemanticEvent {
+    pub schema_version: &'static str,
+    pub resolver_mode: &'static str,
+    /// `deterministic` or the provider that produced the final ordering.
+    pub ordered_by: String,
+    pub semantic_consulted: bool,
+    pub fallback: bool,
+    pub fallback_reason: Option<String>,
+    pub report: Option<SemanticReport>,
+}
+
+/// A resolution plus how it was produced.
+struct Resolved {
+    resolution: Resolution,
+    event: Option<SemanticEvent>,
+    notes: Vec<String>,
+}
+
+fn settings_for(config: &Config) -> Result<ResolverSettings, EngineError> {
+    match &config.resolver {
+        Some(s) => Ok(s.clone()),
+        None => ResolverSettings::load(&config.home).map_err(EngineError::Invalid),
+    }
 }
 
 impl Engine {
     pub fn open(config: Config) -> Result<Self, EngineError> {
         let index = Index::open(&config.index_path())?;
         let journal = Journal::open(&config.evidence_dir())?;
-        Ok(Self {
+        let settings = settings_for(&config)?;
+        Ok(Self::assemble(config, index, journal, settings))
+    }
+
+    fn assemble(config: Config, index: Index, journal: Journal, settings: ResolverSettings) -> Self {
+        let mode = settings.default_mode();
+        let semantic = (settings.provider == Provider::AppleFoundationModels)
+            .then(|| AppleFmRanker::new(&settings));
+        Self {
             config,
             index,
             journal,
             ranker: Box::new(NoInference),
             cancel: CancelToken::new(),
-        })
+            settings,
+            mode,
+            semantic,
+            last_semantic: None,
+        }
+    }
+
+    /// Select the resolver for this engine (`--resolver`). Choosing
+    /// `apple-fm` or `auto` enables the Apple provider even when the config
+    /// file does not name one.
+    pub fn set_resolver_mode(&mut self, mode: ResolverMode) {
+        if mode != ResolverMode::Deterministic && self.semantic.is_none() {
+            self.semantic = Some(AppleFmRanker::new(&self.settings));
+        }
+        self.mode = Some(mode);
+    }
+
+    /// Install a semantic ranker directly (tests, alternative bridges).
+    pub fn set_semantic(&mut self, ranker: AppleFmRanker) {
+        self.semantic = Some(ranker);
+    }
+
+    pub fn resolver_settings(&self) -> &ResolverSettings {
+        &self.settings
+    }
+
+    /// The semantic-resolution evidence recorded by the most recent `run`.
+    pub fn last_semantic(&self) -> Option<&SemanticEvent> {
+        self.last_semantic.as_ref()
     }
 
     /// Move a corrupt index aside and start a fresh one. Evidence is untouched.
     pub fn open_rebuilding(config: Config) -> Result<(Self, Option<PathBuf>), EngineError> {
         let (index, moved) = Index::rebuild(&config.index_path())?;
         let journal = Journal::open(&config.evidence_dir())?;
-        Ok((
-            Self {
-                config,
-                index,
-                journal,
-                ranker: Box::new(NoInference),
-                cancel: CancelToken::new(),
-            },
-            moved,
-        ))
+        let settings = settings_for(&config)?;
+        Ok((Self::assemble(config, index, journal, settings), moved))
     }
 
     /// Replace the semantic ranker (extension point; default: none).
@@ -578,7 +654,8 @@ impl Engine {
                 .event(&request.request_id, "index_reconciled", &reports)?;
         }
 
-        let mut resolution = self.resolve_request(&request, root.as_deref())?;
+        self.last_semantic = None;
+        let mut resolution = self.resolve_recorded(&request, root.as_deref(), &mut notes)?;
         if opts.capture_help {
             if let Resolution::Clarify { clarification, .. } = &resolution {
                 // Only the single best uncharacterized executable is probed.
@@ -603,7 +680,7 @@ impl Engine {
                             )),
                             Err(e) => notes.push(format!("Help capture for {id} failed: {e}")),
                         }
-                        resolution = self.resolve_request(&request, root.as_deref())?;
+                        resolution = self.resolve_recorded(&request, root.as_deref(), &mut notes)?;
                     }
                 }
             }
@@ -698,14 +775,64 @@ impl Engine {
         self.execute_plan(&request, plan, opts, ui)
     }
 
+    /// Resolve, journal the semantic-resolution event, and surface notes.
+    fn resolve_recorded(
+        &mut self,
+        request: &RecordedRequest,
+        root: Option<&str>,
+        notes: &mut Vec<String>,
+    ) -> Result<Resolution, EngineError> {
+        match self.resolve_request(request, root) {
+            Ok(r) => {
+                notes.extend(r.notes);
+                if let Some(ev) = r.event {
+                    self.journal
+                        .event(&request.request_id, "semantic_resolution", &ev)?;
+                    self.last_semantic = Some(ev);
+                }
+                Ok(r.resolution)
+            }
+            Err((e, ev)) => {
+                if let Some(ev) = ev {
+                    self.journal
+                        .event(&request.request_id, "semantic_resolution", &ev)?;
+                    self.last_semantic = Some(ev);
+                }
+                Err(e)
+            }
+        }
+    }
+
+    fn resolve_with(
+        &self,
+        request: &RecordedRequest,
+        caps: &[Capability],
+        root: Option<&str>,
+        history: &BTreeMap<String, HistoryStats>,
+        ranker: &dyn SemanticRanker,
+        extra_terms: &[String],
+    ) -> Resolution {
+        resolve(&ResolveContext {
+            request,
+            capabilities: caps,
+            project_root: root,
+            history,
+            ranker,
+            extra_terms,
+        })
+    }
+
+    #[allow(clippy::type_complexity)]
     fn resolve_request(
         &self,
         request: &RecordedRequest,
         root: Option<&str>,
-    ) -> Result<Resolution, EngineError> {
-        let caps = self.index.visible(root)?;
+    ) -> Result<Resolved, (EngineError, Option<SemanticEvent>)> {
+        let wrap = |e: IndexError| (EngineError::from(e), None);
+        let caps = self.index.visible(root).map_err(wrap)?;
         let history: BTreeMap<String, HistoryStats> = self
-            .observations()?
+            .observations()
+            .map_err(|e| (e, None))?
             .into_iter()
             .map(|(k, o)| {
                 (
@@ -717,13 +844,167 @@ impl Engine {
                 )
             })
             .collect();
-        Ok(resolve(&ResolveContext {
-            request,
-            capabilities: &caps,
-            project_root: root,
-            history: &history,
-            ranker: self.ranker.as_ref(),
-        }))
+
+        let Some(mode) = self.mode else {
+            // Legacy: the installed ranker (default: none), one pass.
+            let resolution =
+                self.resolve_with(request, &caps, root, &history, self.ranker.as_ref(), &[]);
+            return Ok(Resolved {
+                resolution,
+                event: self.ranker.take_report().map(|report| SemanticEvent {
+                    schema_version: "cli2.semantic_event.v1",
+                    resolver_mode: "custom",
+                    ordered_by: self.ranker.name().to_string(),
+                    semantic_consulted: true,
+                    fallback: false,
+                    fallback_reason: None,
+                    report: Some(report),
+                }),
+                notes: vec![],
+            });
+        };
+
+        let deterministic = || {
+            self.resolve_with(request, &caps, root, &history, &NoInference, &[])
+        };
+        if mode == ResolverMode::Deterministic {
+            return Ok(Resolved {
+                resolution: deterministic(),
+                event: Some(SemanticEvent {
+                    schema_version: "cli2.semantic_event.v1",
+                    resolver_mode: mode.as_str(),
+                    ordered_by: "deterministic".into(),
+                    semantic_consulted: false,
+                    fallback: false,
+                    fallback_reason: None,
+                    report: None,
+                }),
+                notes: vec![],
+            });
+        }
+
+        // Deterministic first. In `auto`, a plan it can build is final.
+        let det = deterministic();
+        if mode == ResolverMode::Auto && matches!(det, Resolution::Planned(_)) {
+            return Ok(Resolved {
+                resolution: det,
+                event: Some(SemanticEvent {
+                    schema_version: "cli2.semantic_event.v1",
+                    resolver_mode: mode.as_str(),
+                    ordered_by: "deterministic".into(),
+                    semantic_consulted: false,
+                    fallback: false,
+                    fallback_reason: None,
+                    report: None,
+                }),
+                notes: vec![],
+            });
+        }
+
+        // Semantic pass.
+        let attempt: Result<(Resolution, SemanticReport), (String, Option<SemanticReport>)> =
+            match &self.semantic {
+                None => Err((
+                    "no semantic provider is configured (set resolver.provider in config.json)"
+                        .into(),
+                    None,
+                )),
+                Some(sem) => match sem.expand_terms(request) {
+                    Err(e) => Err((e, sem.take_report())),
+                    Ok(terms) => {
+                        let res = self.resolve_with(request, &caps, root, &history, sem, &terms);
+                        match sem.take_report() {
+                            Some(rep) if rep.failed() => Err((
+                                rep.error.clone().unwrap_or_else(|| "ranking failed".into()),
+                                Some(rep),
+                            )),
+                            Some(rep) => Ok((res, rep)),
+                            // An exact match decided the request; the model was not needed.
+                            None => Ok((
+                                res,
+                                SemanticReport {
+                                    schema_version: SemanticReport::SCHEMA,
+                                    provider: PROVIDER_ID.into(),
+                                    bridge_version: None,
+                                    bridge_request_id: String::new(),
+                                    expansion_terms: terms,
+                                    submitted: vec![],
+                                    order_before: vec![],
+                                    order_after: vec![],
+                                    status: "not_needed".into(),
+                                    validation: "not_run".into(),
+                                    rankings: vec![],
+                                    clarification: None,
+                                    availability: None,
+                                    latency_ms: 0,
+                                    error: None,
+                                },
+                            )),
+                        }
+                    }
+                },
+            };
+
+        match attempt {
+            Ok((resolution, report)) => {
+                let ordered_by = if report.status == "not_needed" {
+                    "deterministic"
+                } else {
+                    PROVIDER_ID
+                };
+                let mut notes = vec![];
+                if ordered_by == PROVIDER_ID {
+                    notes.push(format!(
+                        "Candidate ordering was produced with {PROVIDER_ID} (on-device) over {} retrieved candidates; the runtime validated the ranking and built any plan.",
+                        report.submitted.len()
+                    ));
+                }
+                Ok(Resolved {
+                    resolution,
+                    event: Some(SemanticEvent {
+                        schema_version: "cli2.semantic_event.v1",
+                        resolver_mode: mode.as_str(),
+                        ordered_by: ordered_by.into(),
+                        semantic_consulted: true,
+                        fallback: false,
+                        fallback_reason: None,
+                        report: Some(report),
+                    }),
+                    notes,
+                })
+            }
+            Err((why, report)) => {
+                let event = SemanticEvent {
+                    schema_version: "cli2.semantic_event.v1",
+                    resolver_mode: mode.as_str(),
+                    ordered_by: "deterministic".into(),
+                    semantic_consulted: true,
+                    fallback: true,
+                    fallback_reason: Some(why.clone()),
+                    report,
+                };
+                let may_fall_back = mode == ResolverMode::Auto
+                    || (self.settings.fallback == Fallback::Deterministic
+                        && matches!(det, Resolution::Planned(_)));
+                if may_fall_back {
+                    Ok(Resolved {
+                        resolution: det,
+                        event: Some(event),
+                        notes: vec![format!(
+                            "Semantic ranking with {PROVIDER_ID} was not used ({why}); the deterministic resolver produced the candidate ordering."
+                        )],
+                    })
+                } else {
+                    Err((
+                        EngineError::SemanticUnavailable(format!(
+                            "semantic resolution with {PROVIDER_ID} failed ({why}) and the deterministic resolver cannot resolve {:?} on its own",
+                            request.intent
+                        )),
+                        Some(event),
+                    ))
+                }
+            }
+        }
     }
 
     /// Execute a previously recorded plan (e.g. after reviewing `cli2 plan`).

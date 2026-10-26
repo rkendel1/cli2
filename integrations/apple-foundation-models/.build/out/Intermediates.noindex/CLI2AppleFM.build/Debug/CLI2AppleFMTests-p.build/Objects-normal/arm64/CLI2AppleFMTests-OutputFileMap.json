@@ -1,0 +1,29 @@
+{
+  "" : {
+    "diagnostics" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/CLI2AppleFMTests-primary.dia",
+    "emit-module-dependencies" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/CLI2AppleFMTests-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/CLI2AppleFMTests-primary-emit-module.dia",
+    "pch" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/CLI2AppleFMTests-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/CLI2AppleFMTests-primary.swiftdeps"
+  },
+  "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/DerivedSources/test_entry_point.swift" : {
+    "const-values" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/test_entry_point.swiftconstvalues",
+    "dependencies" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/test_entry_point.d",
+    "diagnostics" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/test_entry_point.dia",
+    "index-unit-output-path" : "/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/test_entry_point.o",
+    "llvm-bc" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/test_entry_point.bc",
+    "object" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/test_entry_point.o",
+    "swift-dependencies" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/test_entry_point.swiftdeps",
+    "swiftmodule" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/test_entry_point~partial.swiftmodule"
+  },
+  "/Users/randy/Developer/cli2/integrations/apple-foundation-models/Tests/CLI2AppleFMTests/ResolverTests.swift" : {
+    "const-values" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/ResolverTests.swiftconstvalues",
+    "dependencies" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/ResolverTests.d",
+    "diagnostics" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/ResolverTests.dia",
+    "index-unit-output-path" : "/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/ResolverTests.o",
+    "llvm-bc" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/ResolverTests.bc",
+    "object" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/ResolverTests.o",
+    "swift-dependencies" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/ResolverTests.swiftdeps",
+    "swiftmodule" : "/Users/randy/Developer/cli2/integrations/apple-foundation-models/.build/out/Intermediates.noindex/CLI2AppleFM.build/Debug/CLI2AppleFMTests-p.build/Objects-normal/arm64/ResolverTests~partial.swiftmodule"
+  }
+}

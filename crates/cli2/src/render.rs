@@ -392,3 +392,92 @@ pub fn task(t: &TaskRecord) -> String {
     }
     s
 }
+
+pub fn model_status(st: &crate::semantic::status::ModelStatus) -> String {
+    let headline = match st.state.as_str() {
+        "ready" => "Apple Foundation Models: framework available and model ready",
+        "model_not_ready" => "Apple Foundation Models: framework present but model not ready",
+        "device_not_eligible" => "Apple Foundation Models: device not eligible",
+        "apple_intelligence_not_enabled" => "Apple Foundation Models: Apple Intelligence is not enabled",
+        "unavailable_unknown" => "Apple Foundation Models: unavailable (the framework gave no specific reason)",
+        "bridge_missing" => "Apple Foundation Models: bridge executable missing",
+        "bridge_launch_failed" => "Apple Foundation Models: bridge failed to launch",
+        "request_timed_out" => "Apple Foundation Models: request timed out",
+        "inference_failed" => "Apple Foundation Models: inference failed",
+        "unsupported_platform" => "Apple Foundation Models: unsupported platform",
+        other => other,
+    };
+    let mut out = format!("{headline}\n");
+    out.push_str(&format!("  Provider      {}\n", st.provider));
+    out.push_str(&format!(
+        "  Bridge        {}{}{}\n",
+        st.bridge.status,
+        st.bridge.version.as_ref().map(|v| format!(" v{v}")).unwrap_or_default(),
+        st.bridge.path.as_ref().map(|p| format!("  {p}")).unwrap_or_default()
+    ));
+    if let Some(a) = &st.model.availability {
+        out.push_str(&format!("  Availability  {a}\n"));
+    }
+    if let Some(d) = &st.model.availability_detail {
+        out.push_str(&format!("  Detail        {d}\n"));
+    }
+    out.push_str(&format!("  Local         {}\n", if st.local_inference { "yes (on-device inference)" } else { "not confirmed" }));
+    if let Some(e) = &st.error {
+        out.push_str(&format!("  Error         {}: {}\n", e.code, e.message));
+    }
+    if let Some(r) = &st.remedy {
+        out.push_str(&format!("  Remedy        {r}\n"));
+    }
+    out
+}
+
+pub fn model_test(t: &crate::semantic::status::ModelTest) -> String {
+    let mut out = if t.passed {
+        format!("Model test passed: validated structured result in {} ms\n", t.latency_ms)
+    } else {
+        format!("Model test FAILED ({})\n", t.state)
+    };
+    if let Some(o) = &t.outcome {
+        out.push_str(&format!("  Outcome       {o}\n"));
+    }
+    if let Some(c) = &t.top_choice {
+        out.push_str(&format!("  Top choice    {c}{}\n", match t.top_choice_as_expected { Some(true) => " (as expected)", Some(false) => " (not the obvious choice)", None => "" }));
+    }
+    if let Some(e) = &t.error {
+        out.push_str(&format!("  Error         {}: {}\n", e.code, e.message));
+    }
+    out.push_str(&format!("  {}\n", t.note));
+    out
+}
+
+pub fn benchmark(r: &crate::semantic::bench::BenchReport) -> String {
+    let pct = |v: Option<f64>| v.map(|x| format!("{:.0}%", x * 100.0)).unwrap_or_else(|| "n/a".into());
+    let mut out = format!(
+        "Semantic-resolution benchmark  (model: {}; {} run, {} skipped of {})\n",
+        r.model_state, r.cases_run, r.cases_skipped, r.cases_total
+    );
+    for c in &r.cases {
+        match &c.skipped {
+            Some(why) => out.push_str(&format!("  SKIP  {:<22} {why}\n", c.id)),
+            None => out.push_str(&format!(
+                "  {}  {:<22} expect {:<18} det: {:<19} apple: {:<19} {:>5} ms  picked {}\n",
+                if c.ranking_ok == Some(true) { "ok  " } else { "MISS" },
+                c.id, c.outcome_expected,
+                c.deterministic_status.clone().unwrap_or_default(),
+                c.semantic_status.clone().unwrap_or_default(),
+                c.latency_ms, c.selected.clone().unwrap_or_else(|| "-".into())
+            )),
+        }
+    }
+    out.push_str(&format!(
+        "Top-1 accuracy        deterministic {}   apple {}\nTop-3 recall          deterministic {}   apple {}\nInvalid capability ref {}   Invalid plan {}   Unnecessary clarification {}   Missed ambiguity {}\nRanking pass (apple)  {}   Availability {}   Fallback {}   Latency mean {} ms, p50 {} ms\n",
+        pct(r.top1_accuracy_deterministic), pct(r.top1_accuracy_semantic),
+        pct(r.top3_recall_deterministic), pct(r.top3_recall_semantic),
+        pct(r.invalid_capability_reference_rate), pct(r.invalid_plan_rate),
+        pct(r.unnecessary_clarification_rate), pct(r.missed_ambiguity_rate),
+        pct(r.ranking_pass_semantic), pct(r.inference_availability_rate), pct(r.deterministic_fallback_rate),
+        r.latency_ms_mean.map(|v| format!("{v:.0}")).unwrap_or("n/a".into()),
+        r.latency_ms_p50.map(|v| v.to_string()).unwrap_or("n/a".into()),
+    ));
+    out
+}

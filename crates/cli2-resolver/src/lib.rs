@@ -20,6 +20,8 @@ pub mod terms;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::Serialize;
+
 use cli2_core::{
     Candidate, Capability, CapabilityKind, Check, Clarification, ClarificationOption,
     EffectCertainty, Effects, InterfaceCompleteness, PlannedCheck, RecordedRequest, Step,
@@ -60,6 +62,70 @@ pub trait SemanticRanker {
         candidates: &mut [Candidate],
         capabilities: &[&Capability],
     ) -> Result<(), String>;
+
+    /// Like [`rerank`](Self::rerank) but with the whole request, so a ranker
+    /// can honour its constraints. Defaults to `rerank` on the intent.
+    fn rerank_request(
+        &self,
+        request: &RecordedRequest,
+        candidates: &mut [Candidate],
+        capabilities: &[&Capability],
+    ) -> Result<(), String> {
+        self.rerank(&request.intent, candidates, capabilities)
+    }
+
+    /// Whether the resolver should widen retrieval beyond lexical matches
+    /// (see [`ResolveContext::extra_terms`]) so the ranker can see candidates
+    /// whose names or descriptions do not share words with the intent.
+    fn wants_wide_retrieval(&self) -> bool {
+        false
+    }
+
+    /// Metadata about the most recent `rerank`, for evidence. Taking it clears it.
+    fn take_report(&self) -> Option<SemanticReport> {
+        None
+    }
+}
+
+/// What a semantic ranker did, recorded as task evidence. The model's reasons
+/// are explanatory metadata, never proof that a plan is valid.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SemanticReport {
+    pub schema_version: &'static str,
+    pub provider: String,
+    pub bridge_version: Option<String>,
+    pub bridge_request_id: String,
+    /// Search terms the model proposed for retrieval (matched against the
+    /// real inventory by the runtime; never capability IDs).
+    pub expansion_terms: Vec<String>,
+    pub submitted: Vec<String>,
+    pub order_before: Vec<String>,
+    pub order_after: Vec<String>,
+    /// ranked | no_match | clarification | failed
+    pub status: String,
+    /// `valid`, or why the response was rejected.
+    pub validation: String,
+    pub rankings: Vec<ReportedRanking>,
+    pub clarification: Option<String>,
+    pub availability: Option<String>,
+    pub latency_ms: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ReportedRanking {
+    pub capability_id: String,
+    pub rank: u32,
+    pub relevance: String,
+    pub reason: String,
+}
+
+impl SemanticReport {
+    pub const SCHEMA: &'static str = "cli2.semantic_resolution.v1";
+
+    pub fn failed(&self) -> bool {
+        self.status == "failed"
+    }
 }
 
 /// The default: no inference provider. Deterministic ranking only.
@@ -82,7 +148,26 @@ pub struct ResolveContext<'a> {
     pub project_root: Option<&'a str>,
     pub history: &'a BTreeMap<String, HistoryStats>,
     pub ranker: &'a dyn SemanticRanker,
+    /// Search terms (from the semantic layer) matched against capability names
+    /// to widen retrieval. Only used when the ranker asks for wide retrieval,
+    /// and only ever admits capabilities that exist in `capabilities`.
+    pub extra_terms: &'a [String],
 }
+
+/// Whether `name` matches a retrieval term: equal, or a whole name segment
+/// (`ripgrep` matches `ripgrep`, `rg-all`; `test` matches `test:fail`).
+fn name_matches_term(name: &str, term: &str) -> bool {
+    let name = name.to_lowercase();
+    let term = term.to_lowercase();
+    name == term
+        || name
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|seg| !seg.is_empty() && seg == term)
+}
+
+/// Retrieval is bounded: wide retrieval admits at most this many
+/// zero-lexical-score capabilities, project tasks first.
+pub const WIDE_RETRIEVAL_LIMIT: usize = 40;
 
 /// A resolved plan before policy assessment and sealing.
 #[derive(Debug, Clone)]
@@ -166,6 +251,8 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
         }
     }
 
+    let wide = ctx.ranker.wants_wide_retrieval();
+    let mut wide_admitted = 0usize;
     let mut scored: Vec<Scored<'_>> = Vec::new();
     for cap in ctx.capabilities {
         let (mut score, mut reasons) =
@@ -183,7 +270,22 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
             reasons.insert(0, "selected by the caller".into());
         }
         if score <= 0.0 {
-            continue;
+            // Wide retrieval (semantic ranking only): admit project tasks and
+            // capabilities whose name matches a proposed term, with a zero
+            // lexical score. They still must earn a score from the ranker.
+            let admitted = wide
+                && wide_admitted < WIDE_RETRIEVAL_LIMIT
+                && (cap.kind == CapabilityKind::ProjectTask
+                    || ctx
+                        .extra_terms
+                        .iter()
+                        .any(|t| name_matches_term(&cap.name, t)));
+            if !admitted {
+                continue;
+            }
+            wide_admitted += 1;
+            score = 0.0;
+            reasons.push("retrieved for semantic ranking (no lexical match)".into());
         }
         let built = build_arguments(cap, &values, &ctx.request.bindings, &env_by_id);
         let mut candidate = Candidate {
@@ -211,12 +313,22 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
         });
     }
 
-    // Optional semantic re-ranking: scores only.
-    if !scored.is_empty() {
+    // Optional semantic re-ranking: scores only. An exact or caller-selected
+    // match (score >= 100) is a deterministic decision and is never reranked.
+    let decided = scored.iter().any(|s| s.candidate.score >= 100.0);
+    if !scored.is_empty() && !decided {
+        // The ranker sees the deterministic order, best first.
+        scored.sort_by(|a, b| {
+            b.candidate
+                .score
+                .partial_cmp(&a.candidate.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.candidate.capability_id.cmp(&b.candidate.capability_id))
+        });
         let before: Vec<Candidate> = scored.iter().map(|s| s.candidate.clone()).collect();
         let mut cands: Vec<Candidate> = before.clone();
         let caps: Vec<&Capability> = scored.iter().map(|s| s.cap).collect();
-        match ctx.ranker.rerank(intent, &mut cands, &caps) {
+        match ctx.ranker.rerank_request(ctx.request, &mut cands, &caps) {
             Ok(()) => {
                 for (s, (new, old)) in scored.iter_mut().zip(cands.into_iter().zip(before)) {
                     if new.capability_id == old.capability_id && new.score.is_finite() {
@@ -225,6 +337,10 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
                             s.candidate
                                 .reasons
                                 .push(format!("score adjusted by ranker `{}`", ctx.ranker.name()));
+                        }
+                        // Rankers may explain themselves, never change viability.
+                        for r in new.reasons.iter().skip(old.reasons.len()) {
+                            s.candidate.reasons.push(r.clone());
                         }
                     }
                 }

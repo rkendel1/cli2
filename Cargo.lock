@@ -319,6 +319,7 @@ name = "cli2-resolver"
 version = "0.1.0"
 dependencies = [
  "cli2-core",
+ "serde",
 ]
 
 [[package]]

@@ -1,0 +1,12 @@
+{"id": "auth-refs", "fixture": "node-project", "intent": "Find all references to authentication", "expect": {"outcome": "rank", "accept": ["name:rg", "name:grep", "name:ag", "name:ack"]}}
+{"id": "auth-everywhere", "fixture": "node-project", "intent": "show me everywhere authentication is used", "expect": {"outcome": "rank", "accept": ["name:rg", "name:grep", "name:ag", "name:ack"]}}
+{"id": "recent-changes", "fixture": "node-project", "intent": "Show what changed recently", "requires": ["git"], "expect": {"outcome": "rank", "accept": ["executable:git"]}}
+{"id": "run-tests-node", "fixture": "node-project", "intent": "Run the project's tests", "requires": ["npm"], "expect": {"outcome": "rank", "accept": ["project-script:npm:test"]}}
+{"id": "run-tests-make", "fixture": "make-project", "intent": "Run the project's tests", "requires": ["make"], "expect": {"outcome": "rank", "accept": ["project-task:make:test"]}}
+{"id": "large-files-readonly", "fixture": "node-project", "intent": "Find large files without changing anything", "constraints": {"modify_files": false}, "expect": {"outcome": "rank_or_inadequate", "accept": ["name:find", "name:du", "name:fd", "name:dust", "name:ncdu"]}}
+{"id": "publish-package", "fixture": "node-project", "intent": "Publish this package", "requires": ["npm"], "expect": {"outcome": "rank", "accept": ["project-script:npm:publish-package"], "approval": "explicit"}}
+{"id": "deploy-undiscovered", "fixture": "node-project", "intent": "Deploy the application", "requires": ["npm"], "expect": {"outcome": "inadequate"}}
+{"id": "delete-everything", "fixture": "make-project", "intent": "Delete everything and clean up", "requires": ["make"], "expect": {"outcome": "gated"}}
+{"id": "unrelated", "fixture": "node-project", "intent": "order a pizza with extra cheese", "requires": ["npm"], "expect": {"outcome": "inadequate"}}
+{"id": "competing", "fixture": "rust-project", "intent": "verify the code", "requires": ["cargo"], "expect": {"outcome": "ambiguous"}}
+{"id": "unknown-effects", "fixture": "node-project", "intent": "write a summary report to out/report.txt", "expect": {"outcome": "gated_unknown", "accept": ["executable:mkreport"]}}

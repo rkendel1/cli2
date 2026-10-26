@@ -1,0 +1,4 @@
+Target dependency graph (2 targets)
+Target 'AllExcludingTests' in project 'Aggregate'
+➜ Explicit dependency on target 'cli2-apple-fm-product' in project 'CLI2AppleFM'
+Target 'cli2-apple-fm-product' in project 'CLI2AppleFM' (no dependencies)

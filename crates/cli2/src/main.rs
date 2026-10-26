@@ -27,7 +27,7 @@ Exit codes:
   2  invalid usage, input, or unknown ID          7  cancelled
   3  awaiting_approval                            8  partially_succeeded
   4  needs_clarification                          9  capability index corrupt (run `cli2 scan --rebuild`)
- 10  internal error
+ 10  internal error                                 11  semantic resolver unavailable (--resolver apple-fm)
 
 Data directory: $CLI2_HOME, else $XDG_DATA_HOME/cli2, else ~/.local/share/cli2";
 
@@ -102,6 +102,10 @@ struct RunArgs {
     /// (bounded) to learn its interface.
     #[arg(long)]
     capture_help: bool,
+    /// Resolver: deterministic | apple-fm | auto (default: from config.json,
+    /// else deterministic).
+    #[arg(long, value_name = "MODE", value_parser = ["deterministic", "apple-fm", "auto"])]
+    resolver: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -160,10 +164,32 @@ enum Cmd {
     },
     /// Print a recorded output blob (an `evidence:sha256:...` reference).
     Evidence { reference: String },
+    /// Apple Foundation Models: availability, smoke test, evaluation.
+    Model {
+        #[command(subcommand)]
+        cmd: ModelCmd,
+    },
     /// Print the published JSON Schemas.
     Schema {
         /// request | capability | plan | result | approval
         name: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ModelCmd {
+    /// Report whether Apple Foundation Models is available and ready.
+    Status,
+    /// Run a harmless, bounded inference smoke test.
+    Test,
+    /// Run the semantic-resolution evaluation suite on this machine.
+    Benchmark {
+        /// Evaluation file (default: evals/apple-foundation-models.jsonl in the repository).
+        #[arg(long, value_name = "FILE")]
+        file: Option<PathBuf>,
+        /// Repository root holding fixtures/ and evals/ (default: found from the binary).
+        #[arg(long, value_name = "DIR")]
+        repo: Option<PathBuf>,
     },
 }
 
@@ -321,6 +347,46 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
             }
             Ok(0)
         }
+        Some(Cmd::Model { cmd }) => {
+            let settings = match &config.resolver {
+                Some(s) => s.clone(),
+                None => cli2::semantic::ResolverSettings::load(&config.home)
+                    .map_err(EngineError::Invalid)?,
+            };
+            match cmd {
+                ModelCmd::Status => {
+                    let st = cli2::semantic::status::model_status(&settings);
+                    if json {
+                        print_json(&st);
+                    } else {
+                        print!("{}", render::model_status(&st));
+                    }
+                    Ok(if st.ready { 0 } else { 1 })
+                }
+                ModelCmd::Test => {
+                    let t = cli2::semantic::status::model_test(&settings);
+                    if json {
+                        print_json(&t);
+                    } else {
+                        print!("{}", render::model_test(&t));
+                    }
+                    Ok(if t.passed { 0 } else { 1 })
+                }
+                ModelCmd::Benchmark { file, repo } => {
+                    let root = repo.or_else(find_repo_root).ok_or_else(|| {
+                        EngineError::Invalid("cannot find the repository (fixtures/, evals/); pass --repo".into())
+                    })?;
+                    let file = file.unwrap_or_else(|| root.join("evals/apple-foundation-models.jsonl"));
+                    let rep = cli2::semantic::bench::run_benchmark(&root, &file, &settings)?;
+                    if json {
+                        print_json(&rep);
+                    } else {
+                        print!("{}", render::benchmark(&rep));
+                    }
+                    Ok(if rep.model_ready { 0 } else { 1 })
+                }
+            }
+        }
         Some(Cmd::Task { cmd }) => {
             let engine = Engine::open(config)?;
             match cmd {
@@ -397,6 +463,20 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
     }
 }
 
+fn find_repo_root() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    std::env::current_dir()
+        .ok()
+        .into_iter()
+        .chain(exe.ancestors().skip(1).map(PathBuf::from))
+        .flat_map(|d| d.ancestors().map(PathBuf::from).collect::<Vec<_>>())
+        .find(|d| d.join("evals/apple-foundation-models.jsonl").is_file() && d.join("fixtures").is_dir())
+}
+
+fn parse_mode(run: &RunArgs) -> Option<cli2::semantic::ResolverMode> {
+    run.resolver.as_deref().and_then(cli2::semantic::ResolverMode::parse)
+}
+
 fn build_request(intent: Vec<String>, run: &RunArgs) -> Result<RequestInput, EngineError> {
     let mut req = match &run.request {
         Some(src) => {
@@ -463,6 +543,9 @@ fn do_intent(
 ) -> Result<i32, EngineError> {
     let mut req = build_request(intent, &run)?;
     let mut engine = Engine::open(config)?;
+    if let Some(mode) = parse_mode(&run) {
+        engine.set_resolver_mode(mode);
+    }
     install_cancel_handler(&engine);
     let opts = RunOptions {
         execute: !run.no_exec,

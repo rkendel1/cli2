@@ -3,8 +3,9 @@
 
 pub mod engine;
 pub mod render;
+pub mod semantic;
 
 pub use engine::{
     digest_matches, ApprovalAnswer, Config, Engine, EngineError, Interaction, NonInteractive,
-    RunOptions, ScanReport, DEFAULT_TIMEOUT_SECS,
+    RunOptions, ScanReport, SemanticEvent, DEFAULT_TIMEOUT_SECS,
 };
