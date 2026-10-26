@@ -26,6 +26,8 @@
 //! `cli2-core`; task, workflow and history documents are passed through as the
 //! existing JSON (`cli2.task.v1`, `cli2.workflow_replay.v1`, …).
 
+pub mod devtask;
+
 use std::collections::BTreeMap;
 
 use cli2_core::{
@@ -108,6 +110,17 @@ pub mod ops {
     pub const HISTORY_SEARCH: &str = "history.search";
     pub const WORKFLOW_GET: &str = "workflow.get";
     pub const WORKFLOW_REPLAN: &str = "workflow.replan";
+    pub const DEVTASK_CREATE: &str = "devtask.create";
+    pub const DEVTASK_GET: &str = "devtask.get";
+    pub const DEVTASK_LIST: &str = "devtask.list";
+    pub const DEVTASK_START: &str = "devtask.start";
+    pub const DEVTASK_APPROVE: &str = "devtask.approve";
+    pub const DEVTASK_REJECT: &str = "devtask.reject";
+    pub const DEVTASK_PAUSE: &str = "devtask.pause";
+    pub const DEVTASK_RESUME: &str = "devtask.resume";
+    pub const DEVTASK_CANCEL: &str = "devtask.cancel";
+    pub const DEVTASK_EVENTS: &str = "devtask.events";
+    pub const DEVTASK_REPORT: &str = "devtask.report";
 
     /// Every operation of protocol version 1.
     pub const ALL: &[&str] = &[
@@ -129,6 +142,17 @@ pub mod ops {
         HISTORY_SEARCH,
         WORKFLOW_GET,
         WORKFLOW_REPLAN,
+        DEVTASK_CREATE,
+        DEVTASK_GET,
+        DEVTASK_LIST,
+        DEVTASK_START,
+        DEVTASK_APPROVE,
+        DEVTASK_REJECT,
+        DEVTASK_PAUSE,
+        DEVTASK_RESUME,
+        DEVTASK_CANCEL,
+        DEVTASK_EVENTS,
+        DEVTASK_REPORT,
     ];
 }
 
@@ -643,6 +667,17 @@ pub fn schemas() -> Vec<(&'static str, Value)> {
         ("content.result", s::<ContentResult>()),
         ("history.search.params", s::<HistorySearchParams>()),
         ("workflow.params", s::<WorkflowParams>()),
+        ("devtask.create.params", s::<devtask::CreateTaskParams>()),
+        ("devtask.id.params", s::<devtask::TaskIdParams>()),
+        ("devtask.approve.params", s::<devtask::ApproveStepParams>()),
+        ("devtask.reject.params", s::<devtask::RejectStepParams>()),
+        ("devtask.list.params", s::<devtask::TaskListParams>()),
+        ("devtask.events.params", s::<devtask::TaskEventsParams>()),
+        ("devtask.view", s::<devtask::TaskView>()),
+        ("devtask.report", s::<devtask::TaskReport>()),
+        ("devtask.list.result", s::<devtask::TaskListResult>()),
+        ("devtask.events.result", s::<devtask::TaskEventsResult>()),
+        ("devtask.event", s::<devtask::DevTaskEvent>()),
     ]
 }
 

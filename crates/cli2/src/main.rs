@@ -786,6 +786,12 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
             let reconciled = runtime
                 .reconcile()
                 .map_err(|e| EngineError::Invalid(e.to_string()))?;
+            // Interrupted executions are recorded as such first; then unfinished
+            // development tasks continue (they never re-run an interrupted execution).
+            let resumed_tasks = server
+                .controller()
+                .recover()
+                .map_err(|e| EngineError::Invalid(e.to_string()))?;
             let stop = server.stop_flag();
             let _ = ctrlc::set_handler(move || stop.store(true, Ordering::SeqCst));
             println!(
@@ -796,6 +802,7 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
                     "instance_id": runtime.instance_id(),
                     "protocol_versions": cli2_protocol::SUPPORTED_VERSIONS,
                     "reconciled_executions": reconciled,
+                    "resumed_tasks": resumed_tasks,
                 })
             );
             let _ = std::io::stdout().flush();
@@ -804,7 +811,9 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
                 cli2_protocol::SUPPORTED_VERSIONS,
                 socket.display()
             );
+            let controller = server.controller();
             server.serve();
+            controller.shutdown(std::time::Duration::from_secs(5));
             runtime.shutdown(std::time::Duration::from_secs(5));
             Ok(0)
         }

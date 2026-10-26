@@ -102,6 +102,7 @@ directory and never scans a project it was not given.
 | `evidence.read` | `{reference, max_bytes?}` → content (`utf-8` or `base64`, `truncated`) |
 | `output.read` | `{output_id, part, max_bytes?}` (`out_N`, `exec_N`, `latest`; `stdout`/`stderr`/`response`/`command-and-response`) |
 | `history.search`, `workflow.get`, `workflow.replan` | existing history/workflow documents; `workflow.replan` returns **fresh plans only** |
+| `devtask.*` | development tasks: a persistent, bounded loop that drives plan → approval → execution → verification toward a goal with explicit acceptance criteria; see [development-tasks.md](development-tasks.md) |
 
 An operation the server does not implement returns `unsupported_operation` with
 `details.supported_operations`; unknown parameter fields are `invalid_params`,

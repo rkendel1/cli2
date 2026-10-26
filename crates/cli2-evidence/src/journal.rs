@@ -200,6 +200,38 @@ impl Journal {
         Ok((r, b, behind))
     }
 
+    /// Events recorded under one `request_id`, with `seq > after`, oldest first,
+    /// as `(seq, recorded_at, kind, data)`.
+    pub fn events_for(
+        &self,
+        request_id: &str,
+        after: i64,
+        limit: usize,
+    ) -> Result<Vec<(i64, String, String, serde_json::Value)>, JournalError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT seq, recorded_at, kind, json FROM events WHERE request_id = ?1 AND seq > ?2 ORDER BY seq ASC LIMIT ?3",
+        )?;
+        let rows = stmt.query_map(params![request_id, after, limit as i64], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (seq, at, kind, json) = row?;
+            out.push((
+                seq,
+                at,
+                kind,
+                serde_json::from_str(&json).unwrap_or(serde_json::Value::Null),
+            ));
+        }
+        Ok(out)
+    }
+
     /// Events of one kind, oldest first, as `(seq, request_id, data)`.
     pub fn events_of_kind(
         &self,
