@@ -190,6 +190,11 @@ enum Cmd {
         #[command(subcommand)]
         cmd: OutputCmd,
     },
+    /// Evaluate cli2 on realistic development tasks in isolated sandboxes.
+    Eval {
+        #[command(subcommand)]
+        cmd: EvalCmd,
+    },
     /// Search what cli2 has done before (evidence-backed, never authority).
     History {
         #[command(subcommand)]
@@ -241,6 +246,31 @@ enum Cmd {
     Schema {
         /// request | capability | plan | result | approval
         name: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum EvalCmd {
+    /// Run the versioned suites and report measured results (no combined score).
+    Run {
+        /// Task suite (default: evals/workflows-v1.jsonl in the repository).
+        #[arg(long, value_name = "FILE")]
+        suite: Option<PathBuf>,
+        /// History-matching suite (default: evals/matching-v1.jsonl; `none` to skip).
+        #[arg(long, value_name = "FILE")]
+        matching: Option<String>,
+        /// Repository root holding fixtures/ and evals/ (default: found from the binary).
+        #[arg(long, value_name = "DIR")]
+        repo: Option<PathBuf>,
+        /// Keep each case's sandbox, journal, evidence and index here, and write report.json.
+        #[arg(long, value_name = "DIR")]
+        out: Option<PathBuf>,
+        /// Also compare against the real on-device model when it is ready.
+        #[arg(long)]
+        model: bool,
+        /// Run a single case by ID.
+        #[arg(long, value_name = "ID")]
+        only: Option<String>,
     },
 }
 
@@ -668,7 +698,7 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
                     limit,
                     verified_only,
                     include_batch_steps,
-                    refresh: true,
+                    freshness_budget: None,
                 },
                 client.as_ref(),
             )?;
@@ -676,6 +706,52 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
                 print_json(&res);
             } else {
                 print!("{}", render_history(&res));
+            }
+            Ok(0)
+        }
+        Some(Cmd::Eval {
+            cmd:
+                EvalCmd::Run {
+                    suite,
+                    matching,
+                    repo,
+                    out,
+                    model,
+                    only,
+                },
+        }) => {
+            let root = repo.or_else(find_repo_root).ok_or_else(|| {
+                EngineError::Invalid(
+                    "cannot find the repository (fixtures/, evals/); pass --repo".into(),
+                )
+            })?;
+            let suite = suite.unwrap_or_else(|| root.join("evals/workflows-v1.jsonl"));
+            let matching = match matching.as_deref() {
+                Some("none") => None,
+                Some(p) => Some(PathBuf::from(p)),
+                None => Some(root.join("evals/matching-v1.jsonl")).filter(|p| p.is_file()),
+            };
+            let report = cli2::eval::run_suite(
+                &root,
+                &suite,
+                &cli2::eval::SuiteOptions {
+                    only,
+                    out_dir: out.clone(),
+                    model,
+                    matching,
+                },
+            )?;
+            if let Some(dir) = &out {
+                std::fs::create_dir_all(dir)?;
+                std::fs::write(
+                    dir.join("report.json"),
+                    serde_json::to_string_pretty(&report).expect("serializable") + "\n",
+                )?;
+            }
+            if json {
+                print_json(&report);
+            } else {
+                print!("{}", render::eval_report(&report));
             }
             Ok(0)
         }

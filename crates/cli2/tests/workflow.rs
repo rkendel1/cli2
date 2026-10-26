@@ -1119,3 +1119,227 @@ fn the_model_may_only_reorder_existing_workflows_and_cannot_relabel_them() {
     assert_eq!(v["ordered_by"], "deterministic");
     assert!(v["model_note"].as_str().unwrap().contains("not used"));
 }
+
+// ------------------------------------------------------------ index freshness
+
+fn engine_for(env: &Env) -> cli2::Engine {
+    let mut config = cli2::Config::from_env().unwrap();
+    config.home = env.home.clone();
+    config.path_var = env.path.clone();
+    config.resolver = Some(Default::default());
+    cli2::Engine::open(config).unwrap()
+}
+
+fn add_history(env: &Env, from: usize, n: usize) {
+    let j = open_journal(env);
+    for i in from..from + n {
+        let id = format!("req_f{i}");
+        record_request(&j, &id, &format!("run the project tests {i}"), "/tmp/p");
+        record_result(&j, &id, "succeeded", Some(("exited", Some(0))), "passed");
+    }
+}
+
+#[test]
+fn ordinary_requests_never_scan_a_large_journal_and_say_so() {
+    use cli2::workflow::store::Freshness;
+    let env = Env::new();
+    let proj = env.project("node-project");
+    let budget = cli2::workflow::engine_ext::FRESHNESS_BUDGET;
+    add_history(&env, 0, budget + 50);
+    let journal_before = std::fs::read(env.home.join("evidence/journal.db")).unwrap();
+
+    // No index yet and history is larger than an ordinary request will build: nothing is built or implied.
+    let mut e = engine_for(&env);
+    let advice = e.advise_history("run the project tests", &proj, None);
+    assert!(
+        matches!(advice.freshness, Freshness::Behind { .. }),
+        "{:?}",
+        advice.freshness
+    );
+    assert!(
+        advice
+            .notes
+            .iter()
+            .any(|n| n.contains("skipped") && n.contains("workflow reindex")),
+        "{:?}",
+        advice.notes
+    );
+    assert!(
+        advice
+            .notes
+            .iter()
+            .all(|n| !n.starts_with("History: workflow")),
+        "no match may be offered as current"
+    );
+    assert!(
+        !env.home.join("workflows.db").exists(),
+        "an ordinary request must not build a large index"
+    );
+    assert_eq!(
+        std::fs::read(env.home.join("evidence/journal.db")).unwrap(),
+        journal_before,
+        "advice only reads the journal"
+    );
+    // The same holds end to end for a real request.
+    let r = env
+        .run(
+            &proj,
+            &["--json", "plan", "order a pizza with extra cheese"],
+        )
+        .json();
+    assert!(
+        r["limitations"]
+            .to_string()
+            .contains("History advice skipped"),
+        "{}",
+        r["limitations"]
+    );
+    drop(e);
+    // Explicit commands make the index current.
+    let r = env.run(
+        &proj,
+        &["--json", "history", "search", "run the project tests"],
+    );
+    assert_eq!(r.code, 0, "{}", r.stderr);
+    let v = r.json();
+    assert_eq!(v["index"]["freshness"]["state"], "rebuilt");
+    assert!(!v["hits"].as_array().unwrap().is_empty());
+
+    // A little new history: an ordinary request now brings the index forward incrementally.
+    add_history(&env, budget + 50, 3);
+    let mut e = engine_for(&env);
+    let advice = e.advise_history("run the project tests", &proj, None);
+    assert!(
+        matches!(
+            advice.freshness,
+            Freshness::UpdatedIncrementally { workflows: 3 }
+        ),
+        "{:?}",
+        advice.freshness
+    );
+    // ... and the result is exactly what a full rebuild would give.
+    let incremental =
+        env.run(&proj, &["--json", "workflow", "reindex"]).json()["fingerprint"].clone();
+    let again = env.run(&proj, &["--json", "workflow", "reindex"]).json()["fingerprint"].clone();
+    assert_eq!(incremental, again);
+    let mut e = engine_for(&env);
+    let adv = e.advise_history("run the project tests", &proj, None);
+    assert!(adv.freshness.is_current());
+
+    // Far behind again: explicit about it.
+    add_history(&env, 10_000, budget + 10);
+    let mut e = engine_for(&env);
+    let adv = e.advise_history("run the project tests", &proj, None);
+    assert!(
+        matches!(adv.freshness, Freshness::Behind { executions_behind, .. } if executions_behind as usize > budget),
+        "{:?}",
+        adv.freshness
+    );
+}
+
+#[test]
+fn incremental_updates_equal_a_full_rebuild_including_batch_membership() {
+    require!(has_node(), "node/npm");
+    let env = Env::new();
+    install_fsearch(&env, SEARCH_HELP);
+    let proj = project(&env, &["authentication", "billing"]);
+    learn(&env, &proj);
+    // Index after the first execution, then record a batch whose steps include later executions.
+    ask(&env, &proj, "authentication");
+    let mut e = engine_for(&env);
+    e.workflow_list().unwrap();
+    drop(e);
+    let f = batch_file(&env, &proj, &["authentication", "billing"], "stop");
+    assert_eq!(
+        env.run(
+            &proj,
+            &[
+                "--json",
+                "batch",
+                "--request-file",
+                f.to_str().unwrap(),
+                "--yes"
+            ]
+        )
+        .code,
+        0
+    );
+    // Incremental refresh, then compare with a from-scratch rebuild of the same journal.
+    let mut e = engine_for(&env);
+    let (_, report) = e.workflow_list().unwrap();
+    assert!(
+        matches!(
+            report.freshness,
+            cli2::workflow::store::Freshness::UpdatedIncrementally { .. }
+        ),
+        "{:?}",
+        report.freshness
+    );
+    let (list, _) = e.workflow_list().unwrap();
+    let incremental: Vec<(String, Option<String>)> = list
+        .iter()
+        .map(|w| (w.id.clone(), w.part_of_batch.clone()))
+        .collect();
+    let (_, fp_full) = e.workflow_reindex().unwrap();
+    let (list2, _) = e.workflow_list().unwrap();
+    let full: Vec<(String, Option<String>)> = list2
+        .iter()
+        .map(|w| (w.id.clone(), w.part_of_batch.clone()))
+        .collect();
+    assert_eq!(incremental, full);
+    assert!(!fp_full.is_empty());
+    assert!(
+        full.iter()
+            .any(|(id, m)| id.starts_with("wf_e") && m.is_some()),
+        "batch members are marked: {full:?}"
+    );
+}
+
+#[test]
+fn a_failed_refresh_leaves_the_journal_alone_and_offers_nothing_as_current() {
+    use cli2::workflow::store::Freshness;
+    use std::os::unix::fs::PermissionsExt;
+    let env = Env::new();
+    let proj = env.project("node-project");
+    add_history(&env, 0, 5);
+    let mut e = engine_for(&env);
+    e.workflow_list().unwrap(); // builds workflows.db
+    drop(e);
+    add_history(&env, 5, 2);
+    let db = env.home.join("workflows.db");
+    std::fs::set_permissions(&db, std::fs::Permissions::from_mode(0o444)).unwrap();
+    if std::fs::OpenOptions::new().write(true).open(&db).is_ok() {
+        eprintln!("SKIPPED: permissions do not restrict this user (running as root?)");
+        return;
+    }
+    let journal_before = std::fs::read(env.home.join("evidence/journal.db")).unwrap();
+    let mut e = engine_for(&env);
+    let advice = e.advise_history("run the project tests", &proj, None);
+    assert!(
+        matches!(advice.freshness, Freshness::Unavailable { .. }),
+        "{:?}",
+        advice.freshness
+    );
+    assert!(
+        advice
+            .notes
+            .iter()
+            .any(|n| n.contains("could not be refreshed") && n.contains("journal is unchanged")),
+        "{:?}",
+        advice.notes
+    );
+    assert!(advice
+        .notes
+        .iter()
+        .all(|n| !n.starts_with("History: workflow")));
+    drop(e);
+    assert_eq!(
+        std::fs::read(env.home.join("evidence/journal.db")).unwrap(),
+        journal_before,
+        "history is untouched"
+    );
+    // The request itself still works.
+    let r = env.run(&proj, &["--json", "plan", "order a pizza"]);
+    assert_eq!(r.code, 4, "{}", r.stderr);
+    std::fs::set_permissions(&db, std::fs::Permissions::from_mode(0o644)).unwrap();
+}

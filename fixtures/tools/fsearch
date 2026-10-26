@@ -1,0 +1,18 @@
+#!/bin/sh
+# A small recursive text search with a conventional --help, for evaluations.
+if [ "$1" = "--help" ]; then
+cat <<'HELP'
+fsearch 1.0
+
+fsearch recursively searches the current directory for lines matching a pattern.
+
+USAGE:
+    fsearch [OPTIONS] PATTERN [PATH ...]
+
+OPTIONS:
+    -i, --ignore-case
+        Search case insensitively.
+HELP
+exit 0
+fi
+exec /usr/bin/grep -rn --exclude-dir=.git -- "$1" .

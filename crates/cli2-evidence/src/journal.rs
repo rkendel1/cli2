@@ -132,6 +132,74 @@ impl Journal {
         Ok(out)
     }
 
+    /// Results recorded after `seq`, oldest first.
+    pub fn results_since(&self, seq: i64) -> Result<Vec<(i64, ExecutionResult)>, JournalError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT seq, json FROM results WHERE seq > ?1 ORDER BY seq ASC")?;
+        let rows = stmt.query_map(params![seq], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (s, json) = row?;
+            out.push((s, from_json(&json)?));
+        }
+        Ok(out)
+    }
+
+    /// Batch records (`batch_recorded` events) after `seq`, oldest first, as
+    /// `(seq, batch_id, data)`. Batch IDs start with `batch_`, so the
+    /// existing `request_id` index bounds the scan.
+    pub fn batch_events_since(
+        &self,
+        seq: i64,
+    ) -> Result<Vec<(i64, String, serde_json::Value)>, JournalError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT seq, request_id, json FROM events
+             WHERE request_id >= 'batch_' AND request_id < 'batch`' AND kind = 'batch_recorded' AND seq > ?1
+             ORDER BY seq ASC",
+        )?;
+        let rows = stmt.query_map(params![seq], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (s, req, json) = row?;
+            out.push((
+                s,
+                req,
+                serde_json::from_str(&json).unwrap_or(serde_json::Value::Null),
+            ));
+        }
+        Ok(out)
+    }
+
+    /// `(highest result seq, highest batch-record seq, results after `since`)`:
+    /// how much history a derived index has not seen. Cheap: no table scans.
+    pub fn history_position(&self, since_results: i64) -> Result<(i64, i64, i64), JournalError> {
+        let r: i64 = self
+            .conn
+            .query_row("SELECT COALESCE(MAX(seq), 0) FROM results", [], |r| {
+                r.get(0)
+            })?;
+        let b: i64 = self.conn.query_row(
+            "SELECT COALESCE(MAX(seq), 0) FROM events WHERE request_id >= 'batch_' AND request_id < 'batch`' AND kind = 'batch_recorded'",
+            [],
+            |r| r.get(0),
+        )?;
+        let behind: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM results WHERE seq > ?1",
+            params![since_results],
+            |r| r.get(0),
+        )?;
+        Ok((r, b, behind))
+    }
+
     /// Events of one kind, oldest first, as `(seq, request_id, data)`.
     pub fn events_of_kind(
         &self,

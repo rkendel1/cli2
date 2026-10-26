@@ -1,0 +1,687 @@
+{
+ "schema_version": "cli2.matching_report.v1",
+ "threshold": 0.5,
+ "cases": 22,
+ "baseline": {
+  "matcher": "stem_overlap_v1",
+  "cases": [
+   {
+    "id": "h-para-unit",
+    "category": "paraphrase",
+    "query": "run unit tests",
+    "retrieved": [
+     [
+      "tests",
+      0.667
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-para-run-suite",
+    "category": "paraphrase",
+    "query": "start the test run",
+    "retrieved": [
+     [
+      "tests",
+      0.667
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-para-sure",
+    "category": "paraphrase",
+    "query": "make sure the tests pass",
+    "retrieved": [],
+    "missed": [
+     "tests"
+    ],
+    "false_positives": [],
+    "top1_correct": false,
+    "passed": false
+   },
+   {
+    "id": "h-para-green",
+    "category": "paraphrase",
+    "query": "is the build green",
+    "retrieved": [
+     [
+      "build",
+      0.5
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-para-eslint",
+    "category": "paraphrase",
+    "query": "run eslint",
+    "retrieved": [],
+    "missed": [
+     "lint"
+    ],
+    "false_positives": [],
+    "top1_correct": false,
+    "passed": false
+   },
+   {
+    "id": "h-para-calls",
+    "category": "paraphrase",
+    "query": "who calls authenticate",
+    "retrieved": [],
+    "missed": [
+     "refs"
+    ],
+    "false_positives": [],
+    "top1_correct": false,
+    "passed": false
+   },
+   {
+    "id": "h-para-grep",
+    "category": "paraphrase",
+    "query": "grep for authenticate",
+    "retrieved": [
+     [
+      "refs",
+      0.8
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-para-working-copy",
+    "category": "paraphrase",
+    "query": "what changed in my working copy",
+    "retrieved": [],
+    "missed": [
+     "changed"
+    ],
+    "false_positives": [],
+    "top1_correct": false,
+    "passed": false
+   },
+   {
+    "id": "h-para-mydiff",
+    "category": "paraphrase",
+    "query": "summarize my diff",
+    "retrieved": [
+     [
+      "diff",
+      0.667
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-para-release",
+    "category": "paraphrase",
+    "query": "release the package",
+    "retrieved": [
+     [
+      "pub",
+      1.0
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-act-remove-artifacts",
+    "category": "similar_different_action",
+    "query": "remove the old build artifacts",
+    "retrieved": [],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": null,
+    "passed": true
+   },
+   {
+    "id": "h-act-install",
+    "category": "similar_different_action",
+    "query": "install the dependencies for the project tests",
+    "retrieved": [
+     [
+      "tests",
+      0.5
+     ]
+    ],
+    "missed": [],
+    "false_positives": [
+     "tests"
+    ],
+    "top1_correct": null,
+    "passed": false
+   },
+   {
+    "id": "h-act-disable",
+    "category": "similar_different_action",
+    "query": "disable the failing tests",
+    "retrieved": [
+     [
+      "tests",
+      0.5
+     ]
+    ],
+    "missed": [],
+    "false_positives": [
+     "tests"
+    ],
+    "top1_correct": null,
+    "passed": false
+   },
+   {
+    "id": "h-act-revert",
+    "category": "similar_different_action",
+    "query": "revert my changes in the working tree",
+    "retrieved": [],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": null,
+    "passed": true
+   },
+   {
+    "id": "h-act-stop",
+    "category": "similar_different_action",
+    "query": "stop the dev server",
+    "retrieved": [
+     [
+      "serve",
+      0.667
+     ]
+    ],
+    "missed": [],
+    "false_positives": [
+     "serve"
+    ],
+    "top1_correct": null,
+    "passed": false
+   },
+   {
+    "id": "h-act-undo",
+    "category": "similar_different_action",
+    "query": "undo the last commit",
+    "retrieved": [
+     [
+      "lastc",
+      0.667
+     ]
+    ],
+    "missed": [],
+    "false_positives": [
+     "lastc"
+    ],
+    "top1_correct": null,
+    "passed": false
+   },
+   {
+    "id": "h-tgt-integration",
+    "category": "different_target",
+    "query": "run the integration tests",
+    "retrieved": [
+     [
+      "tests",
+      0.667
+     ]
+    ],
+    "missed": [],
+    "false_positives": [
+     "tests"
+    ],
+    "top1_correct": null,
+    "passed": false
+   },
+   {
+    "id": "h-tgt-docs",
+    "category": "different_target",
+    "query": "lint the docs",
+    "retrieved": [
+     [
+      "lint",
+      0.5
+     ]
+    ],
+    "missed": [],
+    "false_positives": [
+     "lint"
+    ],
+    "top1_correct": null,
+    "passed": false
+   },
+   {
+    "id": "h-none-pdf",
+    "category": "no_history",
+    "query": "summarize this pdf",
+    "retrieved": [],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": null,
+    "passed": true
+   },
+   {
+    "id": "h-none-translate",
+    "category": "no_history",
+    "query": "translate the readme to french",
+    "retrieved": [],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": null,
+    "passed": true
+   },
+   {
+    "id": "h-unsafe-prod",
+    "category": "unsafe_superficial",
+    "query": "run the tests against production data",
+    "retrieved": [],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": null,
+    "passed": true
+   },
+   {
+    "id": "h-unsafe-force",
+    "category": "unsafe_superficial",
+    "query": "run the project tests with the safety checks disabled",
+    "retrieved": [],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": null,
+    "passed": true
+   }
+  ],
+  "recall": {
+   "passed": 6,
+   "of": 10
+  },
+  "false_positives": {
+   "passed": 6,
+   "of": 24
+  },
+  "top1": {
+   "passed": 6,
+   "of": 10
+  },
+  "by_category": {
+   "different_target": {
+    "cases": 2,
+    "passed": 0
+   },
+   "no_history": {
+    "cases": 2,
+    "passed": 2
+   },
+   "paraphrase": {
+    "cases": 10,
+    "passed": 6
+   },
+   "similar_different_action": {
+    "cases": 6,
+    "passed": 2
+   },
+   "unsafe_superficial": {
+    "cases": 2,
+    "passed": 2
+   }
+  }
+ },
+ "current": {
+  "matcher": "action_aware_v2",
+  "cases": [
+   {
+    "id": "h-para-unit",
+    "category": "paraphrase",
+    "query": "run unit tests",
+    "retrieved": [
+     [
+      "tests",
+      0.667
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-para-run-suite",
+    "category": "paraphrase",
+    "query": "start the test run",
+    "retrieved": [
+     [
+      "tests",
+      1.0
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-para-sure",
+    "category": "paraphrase",
+    "query": "make sure the tests pass",
+    "retrieved": [],
+    "missed": [
+     "tests"
+    ],
+    "false_positives": [],
+    "top1_correct": false,
+    "passed": false
+   },
+   {
+    "id": "h-para-green",
+    "category": "paraphrase",
+    "query": "is the build green",
+    "retrieved": [
+     [
+      "build",
+      0.667
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-para-eslint",
+    "category": "paraphrase",
+    "query": "run eslint",
+    "retrieved": [
+     [
+      "lint",
+      1.0
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-para-calls",
+    "category": "paraphrase",
+    "query": "who calls authenticate",
+    "retrieved": [
+     [
+      "refs",
+      0.5
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-para-grep",
+    "category": "paraphrase",
+    "query": "grep for authenticate",
+    "retrieved": [
+     [
+      "refs",
+      1.0
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-para-working-copy",
+    "category": "paraphrase",
+    "query": "what changed in my working copy",
+    "retrieved": [
+     [
+      "changed",
+      0.571
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-para-mydiff",
+    "category": "paraphrase",
+    "query": "summarize my diff",
+    "retrieved": [
+     [
+      "diff",
+      0.667
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-para-release",
+    "category": "paraphrase",
+    "query": "release the package",
+    "retrieved": [
+     [
+      "pub",
+      1.0
+     ]
+    ],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": true,
+    "passed": true
+   },
+   {
+    "id": "h-act-remove-artifacts",
+    "category": "similar_different_action",
+    "query": "remove the old build artifacts",
+    "retrieved": [],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": null,
+    "passed": true
+   },
+   {
+    "id": "h-act-install",
+    "category": "similar_different_action",
+    "query": "install the dependencies for the project tests",
+    "retrieved": [],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": null,
+    "passed": true
+   },
+   {
+    "id": "h-act-disable",
+    "category": "similar_different_action",
+    "query": "disable the failing tests",
+    "retrieved": [],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": null,
+    "passed": true
+   },
+   {
+    "id": "h-act-revert",
+    "category": "similar_different_action",
+    "query": "revert my changes in the working tree",
+    "retrieved": [],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": null,
+    "passed": true
+   },
+   {
+    "id": "h-act-stop",
+    "category": "similar_different_action",
+    "query": "stop the dev server",
+    "retrieved": [
+     [
+      "serve",
+      0.8
+     ]
+    ],
+    "missed": [],
+    "false_positives": [
+     "serve"
+    ],
+    "top1_correct": null,
+    "passed": false
+   },
+   {
+    "id": "h-act-undo",
+    "category": "similar_different_action",
+    "query": "undo the last commit",
+    "retrieved": [
+     [
+      "lastc",
+      0.8
+     ]
+    ],
+    "missed": [],
+    "false_positives": [
+     "lastc"
+    ],
+    "top1_correct": null,
+    "passed": false
+   },
+   {
+    "id": "h-tgt-integration",
+    "category": "different_target",
+    "query": "run the integration tests",
+    "retrieved": [
+     [
+      "tests",
+      0.667
+     ]
+    ],
+    "missed": [],
+    "false_positives": [
+     "tests"
+    ],
+    "top1_correct": null,
+    "passed": false
+   },
+   {
+    "id": "h-tgt-docs",
+    "category": "different_target",
+    "query": "lint the docs",
+    "retrieved": [
+     [
+      "lint",
+      0.667
+     ]
+    ],
+    "missed": [],
+    "false_positives": [
+     "lint"
+    ],
+    "top1_correct": null,
+    "passed": false
+   },
+   {
+    "id": "h-none-pdf",
+    "category": "no_history",
+    "query": "summarize this pdf",
+    "retrieved": [],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": null,
+    "passed": true
+   },
+   {
+    "id": "h-none-translate",
+    "category": "no_history",
+    "query": "translate the readme to french",
+    "retrieved": [],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": null,
+    "passed": true
+   },
+   {
+    "id": "h-unsafe-prod",
+    "category": "unsafe_superficial",
+    "query": "run the tests against production data",
+    "retrieved": [],
+    "missed": [],
+    "false_positives": [],
+    "top1_correct": null,
+    "passed": true
+   },
+   {
+    "id": "h-unsafe-force",
+    "category": "unsafe_superficial",
+    "query": "run the project tests with the safety checks disabled",
+    "retrieved": [
+     [
+      "tests",
+      0.5
+     ]
+    ],
+    "missed": [],
+    "false_positives": [
+     "tests"
+    ],
+    "top1_correct": null,
+    "passed": false
+   }
+  ],
+  "recall": {
+   "passed": 9,
+   "of": 10
+  },
+  "false_positives": {
+   "passed": 5,
+   "of": 24
+  },
+  "top1": {
+   "passed": 9,
+   "of": 10
+  },
+  "by_category": {
+   "different_target": {
+    "cases": 2,
+    "passed": 0
+   },
+   "no_history": {
+    "cases": 2,
+    "passed": 2
+   },
+   "paraphrase": {
+    "cases": 10,
+    "passed": 9
+   },
+   "similar_different_action": {
+    "cases": 6,
+    "passed": 4
+   },
+   "unsafe_superficial": {
+    "cases": 2,
+    "passed": 1
+   }
+  }
+ },
+ "fingerprint": "012d08444112c9fd66f7e7aa7b75292a2a3b0d7f1014f187525b65d9c02839f4",
+ "note": "Held-out wording, written after the matcher was tuned on matching-v1 and not used to tune it. Remaining failures are documented gaps."
+}

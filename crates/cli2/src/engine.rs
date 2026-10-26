@@ -911,8 +911,8 @@ impl Engine {
             Resolution::Planned(d) => Some(d.selected.id.clone()),
             Resolution::Clarify { .. } => None,
         };
-        let advice = self.history_advice(&request.intent, &wd, planned_cap.as_deref());
-        notes.extend(advice);
+        let advice = self.advise_history(&request.intent, &wd, planned_cap.as_deref());
+        notes.extend(advice.notes);
 
         let draft = match resolution {
             Resolution::Clarify {

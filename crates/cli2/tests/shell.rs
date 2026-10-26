@@ -65,7 +65,18 @@ fn shell_init_emits_a_versioned_non_empty_integration_deterministically() {
 #[test]
 fn integration_defines_no_global_hooks_aliases_bindings_or_evaluation() {
     let script = cli2(&["shell-init", "zsh"]);
-    let code = code_lines(&script).join("\n");
+    // The integration's own code: everything except the clap-generated completion
+    // body, which legitimately names cli2's commands (including `eval`, the
+    // evaluation command) and flags.
+    let own = format!(
+        "{}\n{}",
+        script.split("# ---- completion").next().unwrap(),
+        script
+            .split("_cli2_register_completion() {")
+            .nth(1)
+            .unwrap_or("")
+    );
+    let code = code_lines(&own).join("\n");
     for forbidden in [
         "command_not_found_handler",
         "alias ",

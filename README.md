@@ -316,8 +316,19 @@ journal. It is disposable: delete it (or let it be damaged) and it is rebuilt
 from the journal, identically; `cli2 workflow reindex` does it explicitly and
 prints a fingerprint of the result. Nothing is stored there that the journal
 does not already prove, and it is never consulted as a source of truth.
-Ordinary requests keep it fresh only while history is small (300 executions);
-beyond that, history commands refresh it.
+**Freshness contract.** The index records how much of the journal it has seen
+(two watermarks: the newest execution and the newest batch record). Explicit
+commands (`history`, `workflow`) always bring it fully up to date: they append
+only what is new, and rebuild if the file is missing, damaged or from another
+derivation version; `history search --json` reports the outcome as
+`index.freshness` (`current`, `updated_incrementally`, `rebuilt`). An ordinary
+request does bounded work only: checking currency is a few indexed lookups, and
+it will append at most 200 new executions (or build an index for a history that
+small). Beyond that it scans nothing, offers **no** historical match (a match it
+cannot show to be current is not shown), and adds one line to the plan's
+limitations saying how far behind the index is and to run `cli2 workflow
+reindex`. If a refresh fails, the same applies with the reason; the request
+itself proceeds and the journal is never modified by indexing.
 
 **Outcomes are distinct:** `task_verified`, `process_succeeded` (exit 0, task
 **not** verified: success unknown), `process_failed`, `task_failed_verification`,
@@ -367,6 +378,100 @@ Ordinary requests also get a one-line `History:` note in the plan's
 limitations when a verified, still-valid workflow resembles them; it does not
 change what is planned or approved.
 
+## Evaluation (does it work on real tasks, and where does it fail?)
+
+```sh
+cli2 eval run                       # the task suite + the history-matching suite
+cli2 eval run --out DIR             # keep every sandbox, journal and evidence; writes DIR/report.json
+cli2 eval run --model               # also compare against the real on-device model, if ready
+cli2 eval run --only run-tests --matching none
+cli2 eval run --matching evals/matching-heldout-v1.jsonl
+```
+
+`evals/workflows-v1.jsonl` is a versioned suite of realistic developer requests
+(find references to a symbol, run tests, lint, format check, build check,
+changed files, diff summary, a failing test's diagnostics, a publish that needs
+explicit approval, and re-using workflows after the project changed). Each case
+states the request, the fixture, the acceptable capabilities, expected plan
+properties (argv, approval), whether execution is permitted, the expected
+process outcome, the task-level verification, and the output that must be
+captured. Everything runs in isolated sandboxes: a fresh data directory, a
+hermetic `PATH`, and a throwaway copy of a fixture project with its own git
+repository; the repository and fixtures are never touched (a test checks that).
+
+**Metrics are reported separately, each with its own denominator; there is no
+combined score.** Capability discovery; correct selection (the capability ranked
+first, planned or offered); plan validity (integrity, executable exists, no
+unknown capability or argument); argument correctness; approval behavior (the
+required level, *and* that an unapproved attempt runs nothing and `--yes` cannot
+satisfy explicit approval); execution completion; process success (exit 0);
+process outcome as expected (an intended failure is a pass); task verification
+(a task-level check passed, not just exit 0); workflow retrieval; stale-workflow
+handling (flagged stale *and* a fresh plan reflects the current project, or none
+is built when the task is gone); invalid capability/argument references;
+unintended side effects (any change outside what a case allows, and *any* change
+during planning or an unapproved attempt); unauthorized executions.
+
+Every failing case names the **earliest failing stage**: `discovery`,
+`resolution`, `interface`, `planning`, `authority`, `execution`, `verification`
+or `history`, with a concise diagnostic, and the evidence is retained with
+`--out`. Nothing is retried and no plan is altered after a failure.
+
+**Three approaches are compared on paraphrases** of the same task, kept
+separate: (A) fresh deterministic planning; (B) history retrieval followed by
+fresh re-planning of the retrieved workflow (a verified prior run is recorded
+first; B's executed plan is the *fresh* plan, approved again); (C) fresh
+planning with the real on-device model (`--model`, one non-deterministic run per
+pair; never mixed into A/B, and never a fake bridge).
+
+### Measured results (this Mac, macOS 27.0, arm64; `evals/results/slice7-*.json`)
+
+Task suite: 15 cases run, 14 passed. The one failure is a documented gap, not a
+regression: **`git status` cannot be planned from `git`'s help** (the tool is
+driven by subcommands; its usage `git … <command> [<args>]` yields a required
+`command` input that cannot be filled from "show git status"), earliest failing
+stage `planning`. Metrics: discovery 15/15, selection 14/14, plan validity
+13/13, arguments 12/12, approval 13/13, execution completion 12/12, process
+success 11/12 (the 12th is an *intended* failing test: outcome-as-expected
+12/12), task verification 11/11, workflow retrieval 4/4, stale handling 3/3;
+invalid capability references 0/13, invalid argument references 0/13,
+unintended side effects 0, unauthorized executions 0.
+
+Paraphrase comparison (13 pairs): fresh deterministic 11/13 selected and
+verified; history + re-plan 11/13; real model 12/13 selected, 11/13 verified
+(one run). Invalid plans, unauthorized executions, bad verifications and side
+effects were 0 for all three. **History did not beat fresh planning overall;
+the two are complementary.** History fixed `who calls authenticate` (fresh
+planning could not resolve it) and `grep for authenticate` (fresh planning
+chose the system `grep`, whose interface was never captured; history pinned the
+tool that had been verified). Fresh planning fixed `make sure the tests pass`
+and `is the code lint clean`, which retrieval did not match. 13 pairs and one
+model run is too little to rank approaches.
+
+History matching (retrieval only): the original stem-overlap matcher scored
+recall 10/15 and surfaced 7 of 30 history items that should have been rejected,
+including "delete the project tests" for "run the project tests". The
+replacement (`action_aware_v2`) compares the *objects* of two requests after
+folding a small developer vocabulary, and refuses to match requests whose
+intended action differs (deleting, writing, modifying or publishing never
+matches history that did not, and vice versa; listing never matches running).
+A veto can only lower a score. On the 33-case set it was tuned against: recall
+15/15, false positives 0/30. **That number is optimistic**: on a separate
+held-out set of 22 differently worded cases (`matching-heldout-v1.jsonl`,
+written after tuning and not used to tune) it is recall 9/10 (baseline 6/10)
+and 5/24 false positives (baseline 6/24). Remaining gaps: opposite verbs it
+does not know (`stop` vs `start`, `undo`), target qualifiers (`integration`,
+`docs`), safety-weakening modifiers (`with the safety checks disabled`), and
+conversational phrasings (`make sure the tests pass`). Retrieval only
+nominates; validation, re-planning and policy still decide, and none of the
+matcher's errors can make a stale or ineligible workflow valid.
+
+What the evidence says to invest in next: (1) subcommand-style tools such as
+`git` (the largest real gap); (2) preferring tools whose interface is known over
+name-matches with an unknown interface (the `grep` case); (3) retrieval recall
+for conversational wording; (4) a larger paired sample before drawing any
+conclusion about the model.
+
 ## Commands
 
 | Command | Purpose |
@@ -383,6 +488,7 @@ change what is planned or approved.
 | `cli2 schema [NAME]` | Print the published JSON Schemas. |
 | `cli2 "intent" --output response\|command-and-response\|json` | Choose what is printed (see *Output capture and reuse*). Also on `plan` and `exec`. |
 | `cli2 output list\|show ID\|copy ID [--part …] [--clipboard]\|prune --older-than-days N` | Retrieve captured results by stable ID. |
+| `cli2 eval run [--out DIR] [--model] [--only ID]` | Run the evaluation suites; report per-metric results and the earliest failing stage per case. |
 | `cli2 history search [TEXT] [--verified-only] [--resolver apple-fm]` | Find past workflows resembling a request, with live validity and an explanation. |
 | `cli2 workflow show ID` / `replay ID [--no-exec] [--arg N=V]` / `reindex` | Inspect a workflow; get a **fresh plan** from it (never executes); rebuild the derived index. |
 | `cli2 batch --request-file FILE [--yes]` / `--show BATCH_ID` | Run a structured batch of requests. |

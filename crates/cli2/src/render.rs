@@ -569,3 +569,117 @@ pub fn benchmark(r: &crate::semantic::bench::BenchReport) -> String {
     ));
     out
 }
+
+pub fn eval_report(r: &crate::eval::EvalReport) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let _ = writeln!(
+        s,
+        "cli2 evaluation: {}  ({} run, {} skipped, {} passed, {} failed)",
+        r.suite, r.cases_run, r.cases_skipped, r.cases_passed, r.cases_failed
+    );
+    let _ = writeln!(
+        s,
+        "Each metric has its own denominator; there is no combined score.\n"
+    );
+    let m = &r.metrics;
+    let rate =
+        |name: &str, x: &crate::eval::Rate| format!("  {name:<34} {:>3}/{:<3}\n", x.passed, x.of);
+    for (n, x) in [
+        ("capability discovery", &m.capability_discovery),
+        (
+            "correct capability selection",
+            &m.correct_capability_selection,
+        ),
+        ("plan validity", &m.plan_validity),
+        ("argument correctness", &m.argument_correctness),
+        ("approval behavior", &m.approval_behavior),
+        ("execution completion", &m.execution_completion),
+        ("process success (exit 0)", &m.process_success),
+        (
+            "process outcome as expected",
+            &m.process_outcome_as_expected,
+        ),
+        ("task verification (verified)", &m.task_verification),
+        ("workflow retrieval", &m.workflow_retrieval),
+        ("stale workflow handling", &m.stale_workflow_handling),
+    ] {
+        s.push_str(&rate(n, x));
+    }
+    for (n, c) in [
+        (
+            "invalid capability references",
+            &m.invalid_capability_references,
+        ),
+        (
+            "invalid argument references",
+            &m.invalid_argument_references,
+        ),
+        ("unintended side effects", &m.unintended_side_effects),
+        ("unauthorized executions", &m.unauthorized_executions),
+    ] {
+        let _ = writeln!(s, "  {n:<34} {:>3} (over {})", c.count, c.of);
+    }
+    let _ = writeln!(
+        s,
+        "\nFresh planning vs history reuse vs model, over {} paraphrase pair(s):",
+        r.comparison.fresh_deterministic.pairs
+    );
+    let row = |name: &str, a: &crate::eval::ApproachSummary| {
+        format!("  {name:<22} selection {}/{}  valid plan {}/{}  verified {}/{}  invalid {}  unauthorized {}  bad-verification {}  side-effects {}\n",
+            a.selection_correct.passed, a.selection_correct.of, a.plan_valid.passed, a.plan_valid.of, a.task_verified.passed, a.task_verified.of,
+            a.invalid_plans, a.unauthorized_executions, a.incorrect_verification, a.unintended_side_effects)
+    };
+    s.push_str(&row(
+        "fresh deterministic",
+        &r.comparison.fresh_deterministic,
+    ));
+    s.push_str(&row("history + replan", &r.comparison.history_replan));
+    match &r.comparison.model {
+        Some(a) => s.push_str(&row("model (real, 1 run)", a)),
+        None => {
+            let _ = writeln!(s, "  model: {}", r.comparison.model_status);
+        }
+    }
+    if !r.failure_categories.is_empty() {
+        let _ = writeln!(s, "\nEarliest failing stage:");
+        for (k, v) in &r.failure_categories {
+            let _ = writeln!(s, "  {k:<12} {v}");
+        }
+    }
+    let _ = writeln!(s, "\nCases:");
+    for c in &r.cases {
+        match (&c.skipped, c.passed) {
+            (Some(why), _) => {
+                let _ = writeln!(s, "  SKIP  {:<34} {why}", c.id);
+            }
+            (None, true) => {
+                let _ = writeln!(s, "  pass  {:<34} {}", c.id, c.request);
+            }
+            (None, false) => {
+                let f = c.first_failure.as_ref();
+                let _ = writeln!(
+                    s,
+                    "  FAIL  {:<34} [{}] {}{}",
+                    c.id,
+                    f.map(|f| format!("{:?}", f.stage).to_lowercase())
+                        .unwrap_or_default(),
+                    f.map(|f| f.detail.as_str()).unwrap_or(""),
+                    c.known_gap
+                        .as_ref()
+                        .map(|g| format!("\n          known gap: {g}"))
+                        .unwrap_or_default()
+                );
+            }
+        }
+    }
+    if let Some(mt) = &r.matching {
+        s.push_str(&crate::eval::matching::render(mt));
+    }
+    let _ = writeln!(
+        s,
+        "\nresults fingerprint {} (excludes timing, IDs and paths)",
+        &r.results_fingerprint[..16]
+    );
+    s
+}

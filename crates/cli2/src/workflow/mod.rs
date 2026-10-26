@@ -249,37 +249,27 @@ fn eligibility(steps: &[StepRecord], outcome: Outcome, batch_status: Option<&str
     Eligibility { eligible, reasons }
 }
 
-struct Provenance {
-    interface: InterfaceAtExecution,
-}
-
-fn provenance_map(journal: &Journal) -> Result<BTreeMap<String, Provenance>, EngineError> {
-    let mut map = BTreeMap::new();
-    for (_, request_id, data) in journal.events_of_kind("interface_provenance")? {
-        let cap = &data["capture"];
-        map.insert(
-            request_id,
-            Provenance {
-                interface: InterfaceAtExecution {
-                    completeness: data["interface_completeness"]
-                        .as_str()
-                        .unwrap_or("unknown")
-                        .to_string(),
-                    captured_at: cap["captured_at"].as_str().map(String::from),
-                    usage_line: cap["usage_line"].as_str().map(String::from),
-                    parser_version: cap["parser_version"].as_u64().map(|v| v as u32),
-                },
-            },
-        );
-    }
-    Ok(map)
+fn provenance(journal: &Journal, request_id: &str) -> Option<InterfaceAtExecution> {
+    let data = journal
+        .latest_event_data(request_id, "interface_provenance")
+        .ok()
+        .flatten()?;
+    let cap = &data["capture"];
+    Some(InterfaceAtExecution {
+        completeness: data["interface_completeness"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_string(),
+        captured_at: cap["captured_at"].as_str().map(String::from),
+        usage_line: cap["usage_line"].as_str().map(String::from),
+        parser_version: cap["parser_version"].as_u64().map(|v| v as u32),
+    })
 }
 
 fn step_record(
     journal: &Journal,
     seq: i64,
     r: &ExecutionResult,
-    prov: &BTreeMap<String, Provenance>,
     step_id: &str,
     depends_on: Vec<String>,
 ) -> Option<StepRecord> {
@@ -337,7 +327,7 @@ fn step_record(
             method: a.method,
         }),
         recorded_requirement: plan.as_ref().map(|p| p.approval.level),
-        interface: prov.get(&r.request_id).map(|p| p.interface.clone()),
+        interface: provenance(journal, &r.request_id),
         evidence_refs: evidence,
         recorded_at: ran
             .map(|s| s.finished_at.clone())
@@ -345,21 +335,35 @@ fn step_record(
     })
 }
 
+/// Workflows derived from a slice of the journal, and which earlier-recorded
+/// executions turned out to be steps of a batch in that slice.
+pub struct Derived {
+    pub workflows: Vec<Workflow>,
+    /// `request_id` → the batch workflow ID it belongs to.
+    pub members: BTreeMap<String, String>,
+}
+
 /// Derive every workflow from the journal. Pure function of the journal's
 /// contents: the same history always yields the same list, in the same order.
 pub fn derive(journal: &Journal) -> Result<Vec<Workflow>, EngineError> {
-    let results = journal.all_results()?;
-    let prov = provenance_map(journal)?;
-    let by_seq: BTreeMap<i64, &ExecutionResult> = results.iter().map(|(s, r)| (*s, r)).collect();
-    let mut latest_for_request: BTreeMap<&str, i64> = BTreeMap::new();
-    for (seq, r) in &results {
-        latest_for_request.insert(r.request_id.as_str(), *seq);
-    }
+    Ok(derive_range(journal, 0, 0)?.workflows)
+}
+
+/// Derive the workflows for results after `results_after` and batch records
+/// after `batch_after`. Journal records are immutable and append-only, and each
+/// workflow depends only on its own records, so deriving in pieces yields
+/// exactly what deriving everything at once would.
+pub fn derive_range(
+    journal: &Journal,
+    results_after: i64,
+    batch_after: i64,
+) -> Result<Derived, EngineError> {
+    let results = journal.results_since(results_after)?;
 
     // Batches first, so executions that belonged to one can be marked.
     let mut batches = Vec::new();
     let mut member_of: BTreeMap<String, String> = BTreeMap::new();
-    for (_, batch_id, data) in journal.events_of_kind("batch_recorded")? {
+    for (_, batch_id, data) in journal.batch_events_since(batch_after)? {
         let hex = batch_id.strip_prefix("batch_").unwrap_or(&batch_id);
         let id = format!("wf_b{}", hex.chars().take(12).collect::<String>());
         let mut steps = Vec::new();
@@ -381,10 +385,10 @@ pub fn derive(journal: &Journal) -> Result<Vec<Workflow>, EngineError> {
                     Some(crate::output::ParsedId::Output(oid)) => Some(oid.seq),
                     _ => None,
                 })
-                .or_else(|| request_id.and_then(|r| latest_for_request.get(r).copied()));
+                .or_else(|| request_id.and_then(|r| journal.latest_result_seq(r).ok().flatten()));
             let rec = seq
-                .and_then(|s| by_seq.get(&s).map(|r| (s, *r)))
-                .and_then(|(s, r)| step_record(journal, s, r, &prov, &step_id, depends.clone()));
+                .and_then(|s| journal.result_row(s).ok().map(|r| (s, r)))
+                .and_then(|(s, r)| step_record(journal, s, &r, &step_id, depends.clone()));
             match rec {
                 Some(rec) => {
                     member_of.insert(rec.request_id.clone(), id.clone());
@@ -448,7 +452,7 @@ pub fn derive(journal: &Journal) -> Result<Vec<Workflow>, EngineError> {
 
     let mut out = batches;
     for (seq, r) in &results {
-        let Some(rec) = step_record(journal, *seq, r, &prov, "0", vec![]) else {
+        let Some(rec) = step_record(journal, *seq, r, "0", vec![]) else {
             continue;
         };
         let outcome = rec.outcome;
@@ -473,5 +477,8 @@ pub fn derive(journal: &Journal) -> Result<Vec<Workflow>, EngineError> {
             .cmp(&b.recorded_at)
             .then_with(|| a.id.cmp(&b.id))
     });
-    Ok(out)
+    Ok(Derived {
+        workflows: out,
+        members: member_of,
+    })
 }

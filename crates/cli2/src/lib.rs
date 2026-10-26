@@ -4,6 +4,7 @@
 pub mod batch;
 pub mod clipboard;
 pub mod engine;
+pub mod eval;
 pub mod output;
 pub mod render;
 pub mod semantic;

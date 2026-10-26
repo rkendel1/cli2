@@ -1,0 +1,3458 @@
+{
+ "schema_version": "cli2.eval_report.v1",
+ "suite": "workflows-v1.jsonl",
+ "cli2_version": "0.1.0",
+ "generated_at": "2026-10-26T17:04:00.259Z",
+ "host": {
+  "arch": "aarch64",
+  "os": "macos",
+  "tool:git": "/opt/homebrew/bin/git",
+  "tool:make": "/usr/bin/make",
+  "tool:node": "/opt/homebrew/bin/node",
+  "tool:npm": "/opt/homebrew/bin/npm",
+  "tool:rg": "/opt/homebrew/bin/rg"
+ },
+ "cases_total": 15,
+ "cases_run": 15,
+ "cases_skipped": 0,
+ "cases_passed": 14,
+ "cases_failed": 1,
+ "metrics": {
+  "capability_discovery": {
+   "passed": 15,
+   "of": 15
+  },
+  "correct_capability_selection": {
+   "passed": 14,
+   "of": 14
+  },
+  "plan_validity": {
+   "passed": 13,
+   "of": 13
+  },
+  "argument_correctness": {
+   "passed": 12,
+   "of": 12
+  },
+  "approval_behavior": {
+   "passed": 13,
+   "of": 13
+  },
+  "execution_completion": {
+   "passed": 12,
+   "of": 12
+  },
+  "process_success": {
+   "passed": 11,
+   "of": 12
+  },
+  "process_outcome_as_expected": {
+   "passed": 12,
+   "of": 12
+  },
+  "task_verification": {
+   "passed": 11,
+   "of": 11
+  },
+  "workflow_retrieval": {
+   "passed": 4,
+   "of": 4
+  },
+  "stale_workflow_handling": {
+   "passed": 3,
+   "of": 3
+  },
+  "invalid_capability_references": {
+   "count": 0,
+   "of": 13
+  },
+  "invalid_argument_references": {
+   "count": 0,
+   "of": 13
+  },
+  "unintended_side_effects": {
+   "count": 0,
+   "of": 15
+  },
+  "unauthorized_executions": {
+   "count": 0,
+   "of": 15
+  }
+ },
+ "comparison": {
+  "fresh_deterministic": {
+   "pairs": 13,
+   "selection_correct": {
+    "passed": 11,
+    "of": 13
+   },
+   "plan_valid": {
+    "passed": 11,
+    "of": 13
+   },
+   "task_verified": {
+    "passed": 11,
+    "of": 13
+   },
+   "invalid_plans": 0,
+   "unauthorized_executions": 0,
+   "incorrect_verification": 0,
+   "unintended_side_effects": 0
+  },
+  "history_replan": {
+   "pairs": 13,
+   "selection_correct": {
+    "passed": 11,
+    "of": 13
+   },
+   "plan_valid": {
+    "passed": 11,
+    "of": 13
+   },
+   "task_verified": {
+    "passed": 11,
+    "of": 13
+   },
+   "invalid_plans": 0,
+   "unauthorized_executions": 0,
+   "incorrect_verification": 0,
+   "unintended_side_effects": 0
+  },
+  "model": {
+   "pairs": 13,
+   "selection_correct": {
+    "passed": 12,
+    "of": 13
+   },
+   "plan_valid": {
+    "passed": 12,
+    "of": 13
+   },
+   "task_verified": {
+    "passed": 11,
+    "of": 13
+   },
+   "invalid_plans": 0,
+   "unauthorized_executions": 0,
+   "incorrect_verification": 0,
+   "unintended_side_effects": 0
+  },
+  "model_status": "ready (real on-device inference, one run per pair; not deterministic)"
+ },
+ "failure_categories": {
+  "planning": 1
+ },
+ "cases": [
+  {
+   "id": "symbol-references",
+   "category": "search",
+   "request": "find all references to authenticate",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "fresh_deterministic",
+    "query": "find all references to authenticate",
+    "failure": null,
+    "discovery": true,
+    "selection": true,
+    "plan_valid": true,
+    "argument": true,
+    "approval": true,
+    "execution_completed": true,
+    "process_exit_zero": true,
+    "process_as_expected": true,
+    "verification": true,
+    "retrieval": null,
+    "stale_handling": null,
+    "selected": "executable:fsearch",
+    "plan_status": "planned",
+    "argv": [
+     "fsearch",
+     "authenticate"
+    ],
+    "approval_level": "confirm",
+    "exit_code": 0,
+    "verification_status": "passed",
+    "validity": null,
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": true,
+    "request_ids": [
+     "req_d2dc9e39db884b6a801dfe2ce4602d44",
+     "req_2b79155290524c0f9743d9e0cb588167",
+     "req_2f96ef7155944cdc8408d982f4f8a14f"
+    ],
+    "output_ids": [
+     "out_3"
+    ],
+    "notes": [],
+    "latency_ms": 38
+   },
+   "comparisons": [
+    {
+     "query": "show me everywhere authenticate is used",
+     "fresh_deterministic": {
+      "approach": "fresh_deterministic",
+      "query": "show me everywhere authenticate is used",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "executable:fsearch",
+      "plan_status": "planned",
+      "argv": [
+       "fsearch",
+       "authenticate"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_7f3153eca6334f119f3555d7f61338e0",
+       "req_46ec74141ed3406e821e11b82c8cb885",
+       "req_2b44f2e73ae64187b45d37f44e23230b"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 38
+     },
+     "history_replan": {
+      "approach": "history_replan",
+      "query": "show me everywhere authenticate is used",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": true,
+      "stale_handling": null,
+      "selected": "executable:fsearch",
+      "plan_status": "planned",
+      "argv": [
+       "fsearch",
+       "authenticate"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": "validated",
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_b3f963025d3543b4a33dcd3a2b821a24",
+       "req_b3f963025d3543b4a33dcd3a2b821a24"
+      ],
+      "output_ids": [
+       "out_4"
+      ],
+      "notes": [],
+      "latency_ms": 49
+     },
+     "model": {
+      "approach": "model",
+      "query": "show me everywhere authenticate is used",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "executable:fsearch",
+      "plan_status": "planned",
+      "argv": [
+       "fsearch",
+       "authenticate"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_2e81b4669e81417e9b850f4d68af0a9d",
+       "req_ce585c8b5dda49848789ae5521b8bd5f",
+       "req_4850bd808ff44db8b9a0b24e7e8ca868"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 7253
+     }
+    },
+    {
+     "query": "locate usages of authenticate",
+     "fresh_deterministic": {
+      "approach": "fresh_deterministic",
+      "query": "locate usages of authenticate",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "executable:fsearch",
+      "plan_status": "planned",
+      "argv": [
+       "fsearch",
+       "authenticate"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_d00d4660159641ed88fe5480feb6a1f9",
+       "req_f2246b2d2c35418f82e11705c6d8c6ff",
+       "req_a5174fede0914ebbb243845169f8abce"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 31
+     },
+     "history_replan": {
+      "approach": "history_replan",
+      "query": "locate usages of authenticate",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": true,
+      "stale_handling": null,
+      "selected": "executable:fsearch",
+      "plan_status": "planned",
+      "argv": [
+       "fsearch",
+       "authenticate"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": "validated",
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_9c7d1ebf83084644b76cf9fd63838542",
+       "req_9c7d1ebf83084644b76cf9fd63838542"
+      ],
+      "output_ids": [
+       "out_4"
+      ],
+      "notes": [],
+      "latency_ms": 45
+     },
+     "model": {
+      "approach": "model",
+      "query": "locate usages of authenticate",
+      "failure": {
+       "stage": "resolution",
+       "detail": "No discovered capability clearly matches \"locate usages of authenticate\". Rephrase the intent, name the command, or run `cli2 scan` if it was installed recently."
+      },
+      "discovery": true,
+      "selection": true,
+      "plan_valid": null,
+      "argument": null,
+      "approval": null,
+      "execution_completed": null,
+      "process_exit_zero": null,
+      "process_as_expected": null,
+      "verification": null,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "executable:fsearch",
+      "plan_status": "needs_clarification",
+      "argv": null,
+      "approval_level": null,
+      "exit_code": null,
+      "verification_status": null,
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": false,
+      "request_ids": [
+       "req_fed0dd1997dc445eaf86c112799da4bd"
+      ],
+      "output_ids": [],
+      "notes": [],
+      "latency_ms": 2043
+     }
+    },
+    {
+     "query": "who calls authenticate",
+     "fresh_deterministic": {
+      "approach": "fresh_deterministic",
+      "query": "who calls authenticate",
+      "failure": {
+       "stage": "resolution",
+       "detail": "No discovered capability clearly matches \"who calls authenticate\". Rephrase the intent, name the command, or run `cli2 scan` if it was installed recently."
+      },
+      "discovery": true,
+      "selection": false,
+      "plan_valid": null,
+      "argument": null,
+      "approval": null,
+      "execution_completed": null,
+      "process_exit_zero": null,
+      "process_as_expected": null,
+      "verification": null,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": null,
+      "plan_status": "needs_clarification",
+      "argv": null,
+      "approval_level": null,
+      "exit_code": null,
+      "verification_status": null,
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": false,
+      "request_ids": [
+       "req_967f22fe1b304538b7bd989bd5b68a42"
+      ],
+      "output_ids": [],
+      "notes": [],
+      "latency_ms": 5
+     },
+     "history_replan": {
+      "approach": "history_replan",
+      "query": "who calls authenticate",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": true,
+      "stale_handling": null,
+      "selected": "executable:fsearch",
+      "plan_status": "planned",
+      "argv": [
+       "fsearch",
+       "authenticate"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": "validated",
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_7dff3b4a398648e8888a6a4e7a1babf8",
+       "req_7dff3b4a398648e8888a6a4e7a1babf8"
+      ],
+      "output_ids": [
+       "out_4"
+      ],
+      "notes": [],
+      "latency_ms": 50
+     },
+     "model": {
+      "approach": "model",
+      "query": "who calls authenticate",
+      "failure": {
+       "stage": "resolution",
+       "detail": "selected Some(\"project-task:make:test\"); expected one of [\"executable:fsearch\"]"
+      },
+      "discovery": true,
+      "selection": false,
+      "plan_valid": true,
+      "argument": false,
+      "approval": null,
+      "execution_completed": null,
+      "process_exit_zero": null,
+      "process_as_expected": null,
+      "verification": null,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": null,
+      "verification_status": null,
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": false,
+      "request_ids": [
+       "req_929830d3f78645bc89ff3f55e93a0fac"
+      ],
+      "output_ids": [],
+      "notes": [],
+      "latency_ms": 1780
+     }
+    },
+    {
+     "query": "grep for authenticate",
+     "fresh_deterministic": {
+      "approach": "fresh_deterministic",
+      "query": "grep for authenticate",
+      "failure": {
+       "stage": "interface",
+       "detail": "The best match, `executable:grep`, cannot be planned yet: the interface of `grep` is not characterized; cli2 will not guess its arguments. Capture its help with `cli2 describe executable:grep --capture-help` (this runs `grep --help`), or re"
+      },
+      "discovery": true,
+      "selection": false,
+      "plan_valid": null,
+      "argument": null,
+      "approval": null,
+      "execution_completed": null,
+      "process_exit_zero": null,
+      "process_as_expected": null,
+      "verification": null,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "executable:grep",
+      "plan_status": "needs_clarification",
+      "argv": null,
+      "approval_level": null,
+      "exit_code": null,
+      "verification_status": null,
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": false,
+      "request_ids": [
+       "req_815738f6de694541878fa2f9236a0381"
+      ],
+      "output_ids": [],
+      "notes": [],
+      "latency_ms": 6
+     },
+     "history_replan": {
+      "approach": "history_replan",
+      "query": "grep for authenticate",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": true,
+      "stale_handling": null,
+      "selected": "executable:fsearch",
+      "plan_status": "planned",
+      "argv": [
+       "fsearch",
+       "authenticate"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": "validated",
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_cf4477e39beb463aa07f21ff6e8e913f",
+       "req_cf4477e39beb463aa07f21ff6e8e913f"
+      ],
+      "output_ids": [
+       "out_4"
+      ],
+      "notes": [],
+      "latency_ms": 49
+     },
+     "model": {
+      "approach": "model",
+      "query": "grep for authenticate",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "executable:fsearch",
+      "plan_status": "planned",
+      "argv": [
+       "fsearch",
+       "authenticate"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_76d72da6b34147bf89e941711327f0f1",
+       "req_8517c15effa34da09791187590cc486b",
+       "req_5aa37f91849641a98091e1cd424f88b7"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 6007
+     }
+    }
+   ],
+   "evidence_dir": null
+  },
+  {
+   "id": "symbol-references-real-rg",
+   "category": "search",
+   "request": "find all references to authenticate",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "fresh_deterministic",
+    "query": "find all references to authenticate",
+    "failure": null,
+    "discovery": true,
+    "selection": true,
+    "plan_valid": true,
+    "argument": true,
+    "approval": true,
+    "execution_completed": true,
+    "process_exit_zero": true,
+    "process_as_expected": true,
+    "verification": true,
+    "retrieval": null,
+    "stale_handling": null,
+    "selected": "executable:rg",
+    "plan_status": "planned",
+    "argv": [
+     "rg",
+     "authenticate"
+    ],
+    "approval_level": "confirm",
+    "exit_code": 0,
+    "verification_status": "passed",
+    "validity": null,
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": true,
+    "request_ids": [
+     "req_5a5deaeb39dc4869a9f10079fde6d99b",
+     "req_9f1b9214a8f4431b83bd3d01d73494af",
+     "req_9a04f16f71ce4d6db2207a9e45726afb"
+    ],
+    "output_ids": [
+     "out_3"
+    ],
+    "notes": [],
+    "latency_ms": 35
+   },
+   "comparisons": [],
+   "evidence_dir": null
+  },
+  {
+   "id": "run-tests",
+   "category": "test",
+   "request": "run the project tests",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "fresh_deterministic",
+    "query": "run the project tests",
+    "failure": null,
+    "discovery": true,
+    "selection": true,
+    "plan_valid": true,
+    "argument": true,
+    "approval": true,
+    "execution_completed": true,
+    "process_exit_zero": true,
+    "process_as_expected": true,
+    "verification": true,
+    "retrieval": null,
+    "stale_handling": null,
+    "selected": "project-task:make:test",
+    "plan_status": "planned",
+    "argv": [
+     "make",
+     "test"
+    ],
+    "approval_level": "confirm",
+    "exit_code": 0,
+    "verification_status": "passed",
+    "validity": null,
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": true,
+    "request_ids": [
+     "req_8152b4fbd61a42e5a5d250f93ea15293",
+     "req_8d9be937e4e0484b855f9c5e36f560b6",
+     "req_132abc3bfd9a4439a57857575272e615"
+    ],
+    "output_ids": [
+     "out_3"
+    ],
+    "notes": [],
+    "latency_ms": 42
+   },
+   "comparisons": [
+    {
+     "query": "execute the test suite",
+     "fresh_deterministic": {
+      "approach": "fresh_deterministic",
+      "query": "execute the test suite",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_9ec12d48e06746bca3ab016a6a0bc48e",
+       "req_f199817765d74aaa8eb6446f7cac0ab2",
+       "req_f0f8015b803a4c25b9e107a2ee0e287a"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 30
+     },
+     "history_replan": {
+      "approach": "history_replan",
+      "query": "execute the test suite",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": true,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": "validated",
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_11d01b7c1db4492f900bbdfd6e197677",
+       "req_11d01b7c1db4492f900bbdfd6e197677"
+      ],
+      "output_ids": [
+       "out_4"
+      ],
+      "notes": [],
+      "latency_ms": 44
+     },
+     "model": {
+      "approach": "model",
+      "query": "execute the test suite",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_be8e9f791df84e96b310659b3f4ea3f0",
+       "req_78587faaa5ed42faac75c7a78339390f",
+       "req_e628132cdbf04f45820f1fe1a3b0c140"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 5863
+     }
+    },
+    {
+     "query": "run the tests",
+     "fresh_deterministic": {
+      "approach": "fresh_deterministic",
+      "query": "run the tests",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_821d1e1b839b4a29abb68416da01a7e5",
+       "req_0c7d755f023742e6a31c1821f6c71431",
+       "req_3ce528cb528d4145bd394c540676fa57"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 31
+     },
+     "history_replan": {
+      "approach": "history_replan",
+      "query": "run the tests",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": true,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": "validated",
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_03125957a9b84743bb24ca8ad4f43879",
+       "req_03125957a9b84743bb24ca8ad4f43879"
+      ],
+      "output_ids": [
+       "out_4"
+      ],
+      "notes": [],
+      "latency_ms": 48
+     },
+     "model": {
+      "approach": "model",
+      "query": "run the tests",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_075790b1e10d4880a71a6c788eaae7e5",
+       "req_a11196c8d52d437c9212d7a7de0ec786",
+       "req_66745f55e0dd4f9a8abbbd73d505bd38"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 7206
+     }
+    },
+    {
+     "query": "make sure the tests pass",
+     "fresh_deterministic": {
+      "approach": "fresh_deterministic",
+      "query": "make sure the tests pass",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_1bb2dbd069814b118c2e343b916aaafc",
+       "req_be0bf1d107a747a8962264df1906f469",
+       "req_a5a6c0e701fb41ae91acade5a73a000e"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 42
+     },
+     "history_replan": {
+      "approach": "history_replan",
+      "query": "make sure the tests pass",
+      "failure": {
+       "stage": "history",
+       "detail": "the prior workflow wf_e1 was not retrieved for \"make sure the tests pass\""
+      },
+      "discovery": true,
+      "selection": null,
+      "plan_valid": null,
+      "argument": null,
+      "approval": null,
+      "execution_completed": null,
+      "process_exit_zero": null,
+      "process_as_expected": null,
+      "verification": null,
+      "retrieval": false,
+      "stale_handling": null,
+      "selected": null,
+      "plan_status": "not_attempted",
+      "argv": null,
+      "approval_level": null,
+      "exit_code": null,
+      "verification_status": null,
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": false,
+      "request_ids": [],
+      "output_ids": [],
+      "notes": [],
+      "latency_ms": 22
+     },
+     "model": {
+      "approach": "model",
+      "query": "make sure the tests pass",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_e6509e754a7b4e1aa3c1e2c7e87c9557",
+       "req_57ccd6e38a174212bdd0c937b4f9481e",
+       "req_9667f6abf7214789b3c5e6472110ff5b"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 6657
+     }
+    },
+    {
+     "query": "kick off the specs",
+     "fresh_deterministic": {
+      "approach": "fresh_deterministic",
+      "query": "kick off the specs",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_47468897d7bf4f6093a1b35b014904f7",
+       "req_46440d60e99b498e9af52622faa9d865",
+       "req_7fa76ab9bf624796a4690adf2ba077a4"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 31
+     },
+     "history_replan": {
+      "approach": "history_replan",
+      "query": "kick off the specs",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": true,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": "validated",
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_e2616862da24420286d6c9cb0e3207ab",
+       "req_e2616862da24420286d6c9cb0e3207ab"
+      ],
+      "output_ids": [
+       "out_4"
+      ],
+      "notes": [],
+      "latency_ms": 45
+     },
+     "model": {
+      "approach": "model",
+      "query": "kick off the specs",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_da5b8f4d8994416f8fb391f97f3caaa4",
+       "req_ca81ef089482492ba7b9302b8ea457cf",
+       "req_95ccd91ea9f54e9f98add811c76eaf6a"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 7186
+     }
+    }
+   ],
+   "evidence_dir": null
+  },
+  {
+   "id": "lint-checks",
+   "category": "quality",
+   "request": "run lint checks",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "fresh_deterministic",
+    "query": "run lint checks",
+    "failure": null,
+    "discovery": true,
+    "selection": true,
+    "plan_valid": true,
+    "argument": true,
+    "approval": true,
+    "execution_completed": true,
+    "process_exit_zero": true,
+    "process_as_expected": true,
+    "verification": true,
+    "retrieval": null,
+    "stale_handling": null,
+    "selected": "project-task:make:lint",
+    "plan_status": "planned",
+    "argv": [
+     "make",
+     "lint"
+    ],
+    "approval_level": "confirm",
+    "exit_code": 0,
+    "verification_status": "passed",
+    "validity": null,
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": true,
+    "request_ids": [
+     "req_745dd5fb4b70446cb3f26d637a99c7df",
+     "req_37a40c108670411b9614cffda398bb24",
+     "req_1f40ab07284040379986bbf34ca2f82e"
+    ],
+    "output_ids": [
+     "out_3"
+    ],
+    "notes": [],
+    "latency_ms": 57
+   },
+   "comparisons": [
+    {
+     "query": "lint the project",
+     "fresh_deterministic": {
+      "approach": "fresh_deterministic",
+      "query": "lint the project",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:lint",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "lint"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_ebefa209e96c463eb0f4d88aa5c42503",
+       "req_3c13ec0d9efa44b2837d12fbabb2eb58",
+       "req_f2f322ece33b41f98d456ab043d5cfee"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 31
+     },
+     "history_replan": {
+      "approach": "history_replan",
+      "query": "lint the project",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": true,
+      "stale_handling": null,
+      "selected": "project-task:make:lint",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "lint"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": "validated",
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_365ca3bacc5b4e0fa6f3d66e90ef6709",
+       "req_365ca3bacc5b4e0fa6f3d66e90ef6709"
+      ],
+      "output_ids": [
+       "out_4"
+      ],
+      "notes": [],
+      "latency_ms": 47
+     },
+     "model": {
+      "approach": "model",
+      "query": "lint the project",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:lint",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "lint"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_a0efb79a1bd74964b986ae02b1737cce",
+       "req_387725791b8b4fdaa3f7460337b2a0fb",
+       "req_47d5667fc76040819b6bea05ceb711bc"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 6188
+     }
+    },
+    {
+     "query": "is the code lint clean",
+     "fresh_deterministic": {
+      "approach": "fresh_deterministic",
+      "query": "is the code lint clean",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:lint",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "lint"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_fc62a8bdb43242579188cbb1c78e8d96",
+       "req_fcbb52077cbe407a8cc1ece9ef59c818",
+       "req_7cc37399772a4547b4d7cce91af77f4a"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 31
+     },
+     "history_replan": {
+      "approach": "history_replan",
+      "query": "is the code lint clean",
+      "failure": {
+       "stage": "history",
+       "detail": "the prior workflow wf_e1 was not retrieved for \"is the code lint clean\""
+      },
+      "discovery": true,
+      "selection": null,
+      "plan_valid": null,
+      "argument": null,
+      "approval": null,
+      "execution_completed": null,
+      "process_exit_zero": null,
+      "process_as_expected": null,
+      "verification": null,
+      "retrieval": false,
+      "stale_handling": null,
+      "selected": null,
+      "plan_status": "not_attempted",
+      "argv": null,
+      "approval_level": null,
+      "exit_code": null,
+      "verification_status": null,
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": false,
+      "request_ids": [],
+      "output_ids": [],
+      "notes": [],
+      "latency_ms": 21
+     },
+     "model": {
+      "approach": "model",
+      "query": "is the code lint clean",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:lint",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "lint"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_f47c5e5cff4346b3bedf6e3963634df9",
+       "req_59700e649d5745b8bc93eda5ed77dad5",
+       "req_abbd3dba408842d7887e0a6a4aed20c7"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 6179
+     }
+    }
+   ],
+   "evidence_dir": null
+  },
+  {
+   "id": "format-check",
+   "category": "quality",
+   "request": "check the formatting",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "fresh_deterministic",
+    "query": "check the formatting",
+    "failure": null,
+    "discovery": true,
+    "selection": true,
+    "plan_valid": true,
+    "argument": true,
+    "approval": true,
+    "execution_completed": true,
+    "process_exit_zero": true,
+    "process_as_expected": true,
+    "verification": true,
+    "retrieval": null,
+    "stale_handling": null,
+    "selected": "project-task:make:fmt-check",
+    "plan_status": "planned",
+    "argv": [
+     "make",
+     "fmt-check"
+    ],
+    "approval_level": "confirm",
+    "exit_code": 0,
+    "verification_status": "passed",
+    "validity": null,
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": true,
+    "request_ids": [
+     "req_79dea43d507f44809995ed3487699b2e",
+     "req_b5e4ed87f8eb4a7eb45889a03133ac86",
+     "req_2e795cf34daa48a99b049e8d0edf5006"
+    ],
+    "output_ids": [
+     "out_3"
+    ],
+    "notes": [],
+    "latency_ms": 31
+   },
+   "comparisons": [],
+   "evidence_dir": null
+  },
+  {
+   "id": "changed-files",
+   "category": "git",
+   "request": "list changed files in the working tree",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "fresh_deterministic",
+    "query": "list changed files in the working tree",
+    "failure": null,
+    "discovery": true,
+    "selection": true,
+    "plan_valid": true,
+    "argument": true,
+    "approval": true,
+    "execution_completed": true,
+    "process_exit_zero": true,
+    "process_as_expected": true,
+    "verification": true,
+    "retrieval": null,
+    "stale_handling": null,
+    "selected": "project-task:make:changed",
+    "plan_status": "planned",
+    "argv": [
+     "make",
+     "changed"
+    ],
+    "approval_level": "confirm",
+    "exit_code": 0,
+    "verification_status": "passed",
+    "validity": null,
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": true,
+    "request_ids": [
+     "req_479245cd4b1147a891950340e0e48fd9",
+     "req_0b4a1be466e7488bb518b831fe539cdb",
+     "req_233fd932bd6b4ec09faaf002edc74b7b"
+    ],
+    "output_ids": [
+     "out_3"
+    ],
+    "notes": [],
+    "latency_ms": 30
+   },
+   "comparisons": [],
+   "evidence_dir": null
+  },
+  {
+   "id": "diff-summary",
+   "category": "git",
+   "request": "summarize the working tree diff",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "fresh_deterministic",
+    "query": "summarize the working tree diff",
+    "failure": null,
+    "discovery": true,
+    "selection": true,
+    "plan_valid": true,
+    "argument": true,
+    "approval": true,
+    "execution_completed": true,
+    "process_exit_zero": true,
+    "process_as_expected": true,
+    "verification": true,
+    "retrieval": null,
+    "stale_handling": null,
+    "selected": "project-task:make:diff-summary",
+    "plan_status": "planned",
+    "argv": [
+     "make",
+     "diff-summary"
+    ],
+    "approval_level": "confirm",
+    "exit_code": 0,
+    "verification_status": "passed",
+    "validity": null,
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": true,
+    "request_ids": [
+     "req_3b46d896f84548e59f5595f25b068561",
+     "req_82f03471178b4af885bdffb3aad3909b",
+     "req_77ea3d9e7b794789a470198d0f9892ce"
+    ],
+    "output_ids": [
+     "out_3"
+    ],
+    "notes": [],
+    "latency_ms": 43
+   },
+   "comparisons": [],
+   "evidence_dir": null
+  },
+  {
+   "id": "git-status-direct",
+   "category": "git",
+   "request": "show git status",
+   "skipped": null,
+   "passed": false,
+   "known_gap": "git's usage line is `git [options] <command> [<args>]`; cli2 models <command> as a required positional input it cannot fill from \"show git status\", so it asks for `command` instead of planning `git status` (subcommand-style tools are not modelled yet)",
+   "first_failure": {
+    "stage": "planning",
+    "detail": "The best match, `executable:git`, cannot be planned yet: missing required input(s): command. Provide command with --arg NAME=VALUE (or quote the value in the intent)."
+   },
+   "attempt": {
+    "approach": "fresh_deterministic",
+    "query": "show git status",
+    "failure": {
+     "stage": "planning",
+     "detail": "The best match, `executable:git`, cannot be planned yet: missing required input(s): command. Provide command with --arg NAME=VALUE (or quote the value in the intent)."
+    },
+    "discovery": true,
+    "selection": true,
+    "plan_valid": null,
+    "argument": null,
+    "approval": null,
+    "execution_completed": null,
+    "process_exit_zero": null,
+    "process_as_expected": null,
+    "verification": null,
+    "retrieval": null,
+    "stale_handling": null,
+    "selected": "executable:git",
+    "plan_status": "needs_clarification",
+    "argv": null,
+    "approval_level": null,
+    "exit_code": null,
+    "verification_status": null,
+    "validity": null,
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": false,
+    "request_ids": [
+     "req_10d0364611d24502ba3f955f5c865564"
+    ],
+    "output_ids": [],
+    "notes": [],
+    "latency_ms": 5
+   },
+   "comparisons": [],
+   "evidence_dir": null
+  },
+  {
+   "id": "failing-test-diagnostics",
+   "category": "test",
+   "request": "run the known-failing regression test",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "fresh_deterministic",
+    "query": "run the known-failing regression test",
+    "failure": null,
+    "discovery": true,
+    "selection": true,
+    "plan_valid": true,
+    "argument": true,
+    "approval": true,
+    "execution_completed": true,
+    "process_exit_zero": false,
+    "process_as_expected": true,
+    "verification": null,
+    "retrieval": null,
+    "stale_handling": null,
+    "selected": "project-task:make:test-failing",
+    "plan_status": "planned",
+    "argv": [
+     "make",
+     "test-failing"
+    ],
+    "approval_level": "confirm",
+    "exit_code": 2,
+    "verification_status": "failed",
+    "validity": null,
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": true,
+    "request_ids": [
+     "req_54cdccc0c3eb4b4ea2a37ef5f385766f",
+     "req_d1533362357f49d1996a3920d96ef954",
+     "req_c90a20abc57f4080b19ceb3effb86e70"
+    ],
+    "output_ids": [
+     "out_3"
+    ],
+    "notes": [],
+    "latency_ms": 30
+   },
+   "comparisons": [],
+   "evidence_dir": null
+  },
+  {
+   "id": "build-check",
+   "category": "build",
+   "request": "check that the project builds",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "fresh_deterministic",
+    "query": "check that the project builds",
+    "failure": null,
+    "discovery": true,
+    "selection": true,
+    "plan_valid": true,
+    "argument": true,
+    "approval": true,
+    "execution_completed": true,
+    "process_exit_zero": true,
+    "process_as_expected": true,
+    "verification": true,
+    "retrieval": null,
+    "stale_handling": null,
+    "selected": "project-task:make:build",
+    "plan_status": "planned",
+    "argv": [
+     "make",
+     "build"
+    ],
+    "approval_level": "confirm",
+    "exit_code": 0,
+    "verification_status": "passed",
+    "validity": null,
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": true,
+    "request_ids": [
+     "req_080d2ae2e5ee4c96aebc1e64edf3b3c7",
+     "req_68332e8998724d1c8166d3a9401be708",
+     "req_5b67a24441ab49a1b3822f42bdb3c38c"
+    ],
+    "output_ids": [
+     "out_3"
+    ],
+    "notes": [],
+    "latency_ms": 30
+   },
+   "comparisons": [
+    {
+     "query": "verify the build works",
+     "fresh_deterministic": {
+      "approach": "fresh_deterministic",
+      "query": "verify the build works",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:build",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "build"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_e6257c2cfd5844da855e84c314ff1982",
+       "req_75942d95507144bba17ebd54cf5d3c21",
+       "req_6e43cf9381c743d7ae76fd5357ee0701"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 30
+     },
+     "history_replan": {
+      "approach": "history_replan",
+      "query": "verify the build works",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": true,
+      "stale_handling": null,
+      "selected": "project-task:make:build",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "build"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": "validated",
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_7b5ec3e2da7446cdac315454d41784c8",
+       "req_7b5ec3e2da7446cdac315454d41784c8"
+      ],
+      "output_ids": [
+       "out_4"
+      ],
+      "notes": [],
+      "latency_ms": 46
+     },
+     "model": {
+      "approach": "model",
+      "query": "verify the build works",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:build",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "build"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_b9693e2ed4804e78b6d4427085c0b607",
+       "req_4a808791f1aa41698348e38bef862813",
+       "req_50501b84e9224a2a89c468afc90e3c64"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 7032
+     }
+    },
+    {
+     "query": "does it compile",
+     "fresh_deterministic": {
+      "approach": "fresh_deterministic",
+      "query": "does it compile",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:build",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "build"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_683287a2cc5547998caa65b2bf3a9027",
+       "req_38c347716f194698865cdcdcca2f19c1",
+       "req_a235ebf2a92f42e4954e5da54fe572be"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 31
+     },
+     "history_replan": {
+      "approach": "history_replan",
+      "query": "does it compile",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": true,
+      "stale_handling": null,
+      "selected": "project-task:make:build",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "build"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": "validated",
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_f8f96d47f0184ce5a120615d8a7e7ba0",
+       "req_f8f96d47f0184ce5a120615d8a7e7ba0"
+      ],
+      "output_ids": [
+       "out_4"
+      ],
+      "notes": [],
+      "latency_ms": 64
+     },
+     "model": {
+      "approach": "model",
+      "query": "does it compile",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:build",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "build"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_a615444855924214b690cfe979ebda35",
+       "req_15de11910de8481cbfc56964adeda0bb",
+       "req_c4ce7313c23549c993ad06a1ed2a1bcc"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 5179
+     }
+    }
+   ],
+   "evidence_dir": null
+  },
+  {
+   "id": "publish-needs-explicit-approval",
+   "category": "authority",
+   "request": "publish the package",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "fresh_deterministic",
+    "query": "publish the package",
+    "failure": null,
+    "discovery": true,
+    "selection": true,
+    "plan_valid": true,
+    "argument": null,
+    "approval": true,
+    "execution_completed": null,
+    "process_exit_zero": null,
+    "process_as_expected": null,
+    "verification": null,
+    "retrieval": null,
+    "stale_handling": null,
+    "selected": "project-script:npm:publish-package",
+    "plan_status": "planned",
+    "argv": [
+     "npm",
+     "run",
+     "publish-package"
+    ],
+    "approval_level": "explicit",
+    "exit_code": null,
+    "verification_status": null,
+    "validity": null,
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": false,
+    "request_ids": [
+     "req_00f8ef699f914e96bbfe94321f915757",
+     "req_2b14c694664c4fb0901682326a97daf4",
+     "req_4725f02c82604cb8b52a91c2b9b50ace"
+    ],
+    "output_ids": [],
+    "notes": [],
+    "latency_ms": 15
+   },
+   "comparisons": [],
+   "evidence_dir": null
+  },
+  {
+   "id": "reuse-after-unrelated-change",
+   "category": "history",
+   "request": "run the project tests",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "history_replan",
+    "query": "run the project tests",
+    "failure": null,
+    "discovery": true,
+    "selection": true,
+    "plan_valid": true,
+    "argument": true,
+    "approval": true,
+    "execution_completed": true,
+    "process_exit_zero": true,
+    "process_as_expected": true,
+    "verification": true,
+    "retrieval": true,
+    "stale_handling": null,
+    "selected": "project-task:make:test",
+    "plan_status": "planned",
+    "argv": [
+     "make",
+     "test"
+    ],
+    "approval_level": "confirm",
+    "exit_code": 0,
+    "verification_status": "passed",
+    "validity": "validated",
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": true,
+    "request_ids": [
+     "req_40ec6babad724d71a7e3a800d04f3b92",
+     "req_40ec6babad724d71a7e3a800d04f3b92"
+    ],
+    "output_ids": [
+     "out_4"
+    ],
+    "notes": [],
+    "latency_ms": 46
+   },
+   "comparisons": [
+    {
+     "query": "execute the test suite",
+     "fresh_deterministic": {
+      "approach": "fresh_deterministic",
+      "query": "execute the test suite",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_5c4fe1ddcb6c41eca151b1bf0c7e395f",
+       "req_63540e87748045a198ca05f56e97a090",
+       "req_79a01f5f3aef4ff2b92d52052182604a"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 30
+     },
+     "history_replan": {
+      "approach": "history_replan",
+      "query": "execute the test suite",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": true,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": "validated",
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_d93452e4ed064b96bec996ceaea53fd3",
+       "req_d93452e4ed064b96bec996ceaea53fd3"
+      ],
+      "output_ids": [
+       "out_4"
+      ],
+      "notes": [],
+      "latency_ms": 45
+     },
+     "model": {
+      "approach": "model",
+      "query": "execute the test suite",
+      "failure": null,
+      "discovery": true,
+      "selection": true,
+      "plan_valid": true,
+      "argument": true,
+      "approval": true,
+      "execution_completed": true,
+      "process_exit_zero": true,
+      "process_as_expected": true,
+      "verification": true,
+      "retrieval": null,
+      "stale_handling": null,
+      "selected": "project-task:make:test",
+      "plan_status": "planned",
+      "argv": [
+       "make",
+       "test"
+      ],
+      "approval_level": "confirm",
+      "exit_code": 0,
+      "verification_status": "passed",
+      "validity": null,
+      "invalid_capability_refs": 0,
+      "invalid_argument_refs": 0,
+      "unintended_side_effects": [],
+      "unauthorized_executions": 0,
+      "executed": true,
+      "request_ids": [
+       "req_21e991c0b34e411daa43adbbffe132b2",
+       "req_42c5a8a0f77548e2862923026dd14ab7",
+       "req_47c0555122a54b608594604c49a7bc79"
+      ],
+      "output_ids": [
+       "out_3"
+      ],
+      "notes": [],
+      "latency_ms": 5847
+     }
+    }
+   ],
+   "evidence_dir": null
+  },
+  {
+   "id": "reuse-after-recipe-change",
+   "category": "history",
+   "request": "run the project tests",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "history_replan",
+    "query": "run the project tests",
+    "failure": null,
+    "discovery": true,
+    "selection": true,
+    "plan_valid": true,
+    "argument": true,
+    "approval": true,
+    "execution_completed": true,
+    "process_exit_zero": true,
+    "process_as_expected": true,
+    "verification": true,
+    "retrieval": true,
+    "stale_handling": true,
+    "selected": "project-task:make:test",
+    "plan_status": "planned",
+    "argv": [
+     "make",
+     "test"
+    ],
+    "approval_level": "confirm",
+    "exit_code": 0,
+    "verification_status": "passed",
+    "validity": "stale",
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": true,
+    "request_ids": [
+     "req_2016ed85148c43c286ef89e9d95630f4",
+     "req_2016ed85148c43c286ef89e9d95630f4"
+    ],
+    "output_ids": [
+     "out_4"
+    ],
+    "notes": [],
+    "latency_ms": 62
+   },
+   "comparisons": [],
+   "evidence_dir": null
+  },
+  {
+   "id": "reuse-after-target-removed",
+   "category": "history",
+   "request": "run the project tests",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "history_replan",
+    "query": "run the project tests",
+    "failure": null,
+    "discovery": true,
+    "selection": null,
+    "plan_valid": null,
+    "argument": null,
+    "approval": null,
+    "execution_completed": null,
+    "process_exit_zero": null,
+    "process_as_expected": null,
+    "verification": null,
+    "retrieval": true,
+    "stale_handling": true,
+    "selected": null,
+    "plan_status": "needs_clarification",
+    "argv": null,
+    "approval_level": null,
+    "exit_code": null,
+    "verification_status": null,
+    "validity": "stale",
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": false,
+    "request_ids": [],
+    "output_ids": [],
+    "notes": [],
+    "latency_ms": 28
+   },
+   "comparisons": [],
+   "evidence_dir": null
+  },
+  {
+   "id": "reuse-in-another-project",
+   "category": "history",
+   "request": "run the project tests",
+   "skipped": null,
+   "passed": true,
+   "known_gap": null,
+   "first_failure": null,
+   "attempt": {
+    "approach": "history_replan",
+    "query": "run the project tests",
+    "failure": null,
+    "discovery": true,
+    "selection": true,
+    "plan_valid": true,
+    "argument": true,
+    "approval": true,
+    "execution_completed": true,
+    "process_exit_zero": true,
+    "process_as_expected": true,
+    "verification": true,
+    "retrieval": true,
+    "stale_handling": true,
+    "selected": "project-task:make:test",
+    "plan_status": "planned",
+    "argv": [
+     "make",
+     "test"
+    ],
+    "approval_level": "confirm",
+    "exit_code": 0,
+    "verification_status": "passed",
+    "validity": "stale",
+    "invalid_capability_refs": 0,
+    "invalid_argument_refs": 0,
+    "unintended_side_effects": [],
+    "unauthorized_executions": 0,
+    "executed": true,
+    "request_ids": [
+     "req_2bd756b414944088a7c7e93614b48479",
+     "req_2bd756b414944088a7c7e93614b48479"
+    ],
+    "output_ids": [
+     "out_4"
+    ],
+    "notes": [],
+    "latency_ms": 49
+   },
+   "comparisons": [],
+   "evidence_dir": null
+  }
+ ],
+ "matching": {
+  "schema_version": "cli2.matching_report.v1",
+  "threshold": 0.5,
+  "cases": 33,
+  "baseline": {
+   "matcher": "stem_overlap_v1",
+   "cases": [
+    {
+     "id": "para-tests-1",
+     "category": "paraphrase",
+     "query": "execute the test suite",
+     "retrieved": [
+      [
+       "tests",
+       0.667
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-tests-2",
+     "category": "paraphrase",
+     "query": "run the tests",
+     "retrieved": [
+      [
+       "tests",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-tests-3",
+     "category": "paraphrase",
+     "query": "kick off the specs",
+     "retrieved": [
+      [
+       "tests",
+       0.5
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-lint-1",
+     "category": "paraphrase",
+     "query": "lint the project",
+     "retrieved": [
+      [
+       "lint",
+       0.667
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-build-1",
+     "category": "paraphrase",
+     "query": "verify the build works",
+     "retrieved": [
+      [
+       "build",
+       0.8
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-build-2",
+     "category": "paraphrase",
+     "query": "compile the project",
+     "retrieved": [
+      [
+       "build",
+       0.667
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-search-1",
+     "category": "paraphrase",
+     "query": "show me everywhere authenticate is used",
+     "retrieved": [],
+     "missed": [
+      "refs"
+     ],
+     "false_positives": [],
+     "top1_correct": false,
+     "passed": false
+    },
+    {
+     "id": "para-search-2",
+     "category": "paraphrase",
+     "query": "locate usages of authenticate",
+     "retrieved": [],
+     "missed": [
+      "refs"
+     ],
+     "false_positives": [],
+     "top1_correct": false,
+     "passed": false
+    },
+    {
+     "id": "para-search-3",
+     "category": "paraphrase",
+     "query": "search the code for authenticate",
+     "retrieved": [
+      [
+       "refs",
+       0.667
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-changed-1",
+     "category": "paraphrase",
+     "query": "which files have I modified",
+     "retrieved": [],
+     "missed": [
+      "changed"
+     ],
+     "false_positives": [],
+     "top1_correct": false,
+     "passed": false
+    },
+    {
+     "id": "para-changed-2",
+     "category": "paraphrase",
+     "query": "show the changed files",
+     "retrieved": [
+      [
+       "changed",
+       0.75
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-diff-1",
+     "category": "paraphrase",
+     "query": "give me a summary of my uncommitted changes",
+     "retrieved": [],
+     "missed": [
+      "diff"
+     ],
+     "false_positives": [],
+     "top1_correct": false,
+     "passed": false
+    },
+    {
+     "id": "para-fmt-1",
+     "category": "paraphrase",
+     "query": "check the code style",
+     "retrieved": [
+      [
+       "lint",
+       0.8
+      ]
+     ],
+     "missed": [
+      "fmt"
+     ],
+     "false_positives": [
+      "lint"
+     ],
+     "top1_correct": false,
+     "passed": false
+    },
+    {
+     "id": "act-delete",
+     "category": "similar_different_action",
+     "query": "delete the project tests",
+     "retrieved": [
+      [
+       "tests",
+       0.667
+      ]
+     ],
+     "missed": [],
+     "false_positives": [
+      "tests"
+     ],
+     "top1_correct": null,
+     "passed": false
+    },
+    {
+     "id": "act-write",
+     "category": "similar_different_action",
+     "query": "write new tests for the project",
+     "retrieved": [
+      [
+       "tests",
+       0.5
+      ]
+     ],
+     "missed": [],
+     "false_positives": [
+      "tests"
+     ],
+     "top1_correct": null,
+     "passed": false
+    },
+    {
+     "id": "act-list",
+     "category": "similar_different_action",
+     "query": "list the project tests",
+     "retrieved": [
+      [
+       "tests",
+       0.667
+      ]
+     ],
+     "missed": [],
+     "false_positives": [
+      "tests"
+     ],
+     "top1_correct": null,
+     "passed": false
+    },
+    {
+     "id": "act-clean",
+     "category": "similar_different_action",
+     "query": "clean the build output",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "act-unpublish",
+     "category": "similar_different_action",
+     "query": "unpublish the package",
+     "retrieved": [
+      [
+       "pub",
+       0.5
+      ]
+     ],
+     "missed": [],
+     "false_positives": [
+      "pub"
+     ],
+     "top1_correct": null,
+     "passed": false
+    },
+    {
+     "id": "act-rename",
+     "category": "similar_different_action",
+     "query": "rename authenticate across the project",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "act-format-apply",
+     "category": "similar_different_action",
+     "query": "format the code",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "act-skip",
+     "category": "similar_different_action",
+     "query": "skip the project tests",
+     "retrieved": [
+      [
+       "tests",
+       0.667
+      ]
+     ],
+     "missed": [],
+     "false_positives": [
+      "tests"
+     ],
+     "top1_correct": null,
+     "passed": false
+    },
+    {
+     "id": "act-fix",
+     "category": "similar_different_action",
+     "query": "fix the failing lint checks",
+     "retrieved": [
+      [
+       "lint",
+       0.667
+      ]
+     ],
+     "missed": [],
+     "false_positives": [
+      "lint"
+     ],
+     "top1_correct": null,
+     "passed": false
+    },
+    {
+     "id": "tgt-lint-vs-tests",
+     "category": "different_target",
+     "query": "run the project linter",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "tgt-build-vs-lint",
+     "category": "different_target",
+     "query": "check that the docs build",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "tgt-diff-vs-status",
+     "category": "different_target",
+     "query": "show the commit history",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "none-1",
+     "category": "no_history",
+     "query": "order a pizza with extra cheese",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "none-2",
+     "category": "no_history",
+     "query": "deploy the application to production",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "none-3",
+     "category": "no_history",
+     "query": "run the project tests",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "unsafe-1",
+     "category": "unsafe_superficial",
+     "query": "run the project tests and then delete the build output",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "unsafe-2",
+     "category": "unsafe_superficial",
+     "query": "publish the package after the tests pass",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "unsafe-3",
+     "category": "unsafe_superficial",
+     "query": "run the production deploy script",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "ctx-same-words",
+     "category": "context_only",
+     "query": "run the project tests",
+     "retrieved": [
+      [
+       "tests",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "ctx-other-project",
+     "category": "context_only",
+     "query": "run the tests in the other project",
+     "retrieved": [
+      [
+       "tests",
+       0.667
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    }
+   ],
+   "recall": {
+    "passed": 10,
+    "of": 15
+   },
+   "false_positives": {
+    "passed": 7,
+    "of": 30
+   },
+   "top1": {
+    "passed": 10,
+    "of": 15
+   },
+   "by_category": {
+    "context_only": {
+     "cases": 2,
+     "passed": 2
+    },
+    "different_target": {
+     "cases": 3,
+     "passed": 3
+    },
+    "no_history": {
+     "cases": 3,
+     "passed": 3
+    },
+    "paraphrase": {
+     "cases": 13,
+     "passed": 8
+    },
+    "similar_different_action": {
+     "cases": 9,
+     "passed": 3
+    },
+    "unsafe_superficial": {
+     "cases": 3,
+     "passed": 3
+    }
+   }
+  },
+  "current": {
+   "matcher": "action_aware_v2",
+   "cases": [
+    {
+     "id": "para-tests-1",
+     "category": "paraphrase",
+     "query": "execute the test suite",
+     "retrieved": [
+      [
+       "tests",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-tests-2",
+     "category": "paraphrase",
+     "query": "run the tests",
+     "retrieved": [
+      [
+       "tests",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-tests-3",
+     "category": "paraphrase",
+     "query": "kick off the specs",
+     "retrieved": [
+      [
+       "tests",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-lint-1",
+     "category": "paraphrase",
+     "query": "lint the project",
+     "retrieved": [
+      [
+       "lint",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-build-1",
+     "category": "paraphrase",
+     "query": "verify the build works",
+     "retrieved": [
+      [
+       "build",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-build-2",
+     "category": "paraphrase",
+     "query": "compile the project",
+     "retrieved": [
+      [
+       "build",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-search-1",
+     "category": "paraphrase",
+     "query": "show me everywhere authenticate is used",
+     "retrieved": [
+      [
+       "refs",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-search-2",
+     "category": "paraphrase",
+     "query": "locate usages of authenticate",
+     "retrieved": [
+      [
+       "refs",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-search-3",
+     "category": "paraphrase",
+     "query": "search the code for authenticate",
+     "retrieved": [
+      [
+       "refs",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-changed-1",
+     "category": "paraphrase",
+     "query": "which files have I modified",
+     "retrieved": [
+      [
+       "changed",
+       0.8
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-changed-2",
+     "category": "paraphrase",
+     "query": "show the changed files",
+     "retrieved": [
+      [
+       "changed",
+       0.8
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-diff-1",
+     "category": "paraphrase",
+     "query": "give me a summary of my uncommitted changes",
+     "retrieved": [
+      [
+       "diff",
+       0.667
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "para-fmt-1",
+     "category": "paraphrase",
+     "query": "check the code style",
+     "retrieved": [
+      [
+       "fmt",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "act-delete",
+     "category": "similar_different_action",
+     "query": "delete the project tests",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "act-write",
+     "category": "similar_different_action",
+     "query": "write new tests for the project",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "act-list",
+     "category": "similar_different_action",
+     "query": "list the project tests",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "act-clean",
+     "category": "similar_different_action",
+     "query": "clean the build output",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "act-unpublish",
+     "category": "similar_different_action",
+     "query": "unpublish the package",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "act-rename",
+     "category": "similar_different_action",
+     "query": "rename authenticate across the project",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "act-format-apply",
+     "category": "similar_different_action",
+     "query": "format the code",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "act-skip",
+     "category": "similar_different_action",
+     "query": "skip the project tests",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "act-fix",
+     "category": "similar_different_action",
+     "query": "fix the failing lint checks",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "tgt-lint-vs-tests",
+     "category": "different_target",
+     "query": "run the project linter",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "tgt-build-vs-lint",
+     "category": "different_target",
+     "query": "check that the docs build",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "tgt-diff-vs-status",
+     "category": "different_target",
+     "query": "show the commit history",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "none-1",
+     "category": "no_history",
+     "query": "order a pizza with extra cheese",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "none-2",
+     "category": "no_history",
+     "query": "deploy the application to production",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "none-3",
+     "category": "no_history",
+     "query": "run the project tests",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "unsafe-1",
+     "category": "unsafe_superficial",
+     "query": "run the project tests and then delete the build output",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "unsafe-2",
+     "category": "unsafe_superficial",
+     "query": "publish the package after the tests pass",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "unsafe-3",
+     "category": "unsafe_superficial",
+     "query": "run the production deploy script",
+     "retrieved": [],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": null,
+     "passed": true
+    },
+    {
+     "id": "ctx-same-words",
+     "category": "context_only",
+     "query": "run the project tests",
+     "retrieved": [
+      [
+       "tests",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    },
+    {
+     "id": "ctx-other-project",
+     "category": "context_only",
+     "query": "run the tests in the other project",
+     "retrieved": [
+      [
+       "tests",
+       1.0
+      ]
+     ],
+     "missed": [],
+     "false_positives": [],
+     "top1_correct": true,
+     "passed": true
+    }
+   ],
+   "recall": {
+    "passed": 15,
+    "of": 15
+   },
+   "false_positives": {
+    "passed": 0,
+    "of": 30
+   },
+   "top1": {
+    "passed": 15,
+    "of": 15
+   },
+   "by_category": {
+    "context_only": {
+     "cases": 2,
+     "passed": 2
+    },
+    "different_target": {
+     "cases": 3,
+     "passed": 3
+    },
+    "no_history": {
+     "cases": 3,
+     "passed": 3
+    },
+    "paraphrase": {
+     "cases": 13,
+     "passed": 13
+    },
+    "similar_different_action": {
+     "cases": 9,
+     "passed": 9
+    },
+    "unsafe_superficial": {
+     "cases": 3,
+     "passed": 3
+    }
+   }
+  },
+  "fingerprint": "5b99e6e2a29f826c01a364c1e44aee80c78544861c47fb3bcbeb7f042d858a90"
+ },
+ "results_fingerprint": "3142c20f2dd5327cc3a6885aab01bd014db8574ed3df3aef1fb1313b8671e44a",
+ "note": "Slice 7 run: `cli2 eval run --model --out DIR` on macOS 27.0 / arm64. Deterministic sections are reproducible (results_fingerprint). The `model` comparison is a single real on-device run per pair and is not deterministic. Evidence directories were removed from this saved copy."
+}
