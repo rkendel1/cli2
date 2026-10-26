@@ -7,7 +7,9 @@ pub mod engine;
 pub mod eval;
 pub mod output;
 pub mod render;
+pub mod runtime;
 pub mod semantic;
+pub mod server;
 pub mod workflow;
 
 pub use engine::{

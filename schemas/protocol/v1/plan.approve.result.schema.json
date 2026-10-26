@@ -1,0 +1,112 @@
+{
+  "$defs": {
+    "ApprovalDecision": {
+      "enum": [
+        "granted",
+        "denied"
+      ],
+      "type": "string"
+    },
+    "ApprovalLevel": {
+      "description": "The approval a plan needs before the runtime will execute it.",
+      "oneOf": [
+        {
+          "const": "none",
+          "description": "Well-characterized read-only operation; runs under the default policy.",
+          "type": "string"
+        },
+        {
+          "const": "confirm",
+          "description": "Requires confirmation; `--yes` may grant it non-interactively.",
+          "type": "string"
+        },
+        {
+          "const": "explicit",
+          "description": "Requires explicit approval of this exact plan (interactive `yes`, or the\nplan digest passed via `--approve`). `--yes` is not sufficient.",
+          "type": "string"
+        },
+        {
+          "const": "forbidden",
+          "description": "Cannot be approved under the active policy.",
+          "type": "string"
+        }
+      ]
+    },
+    "ApprovalMethod": {
+      "oneOf": [
+        {
+          "const": "policy_automatic",
+          "description": "No approval was needed under the default policy.",
+          "type": "string"
+        },
+        {
+          "const": "interactive",
+          "description": "A person confirmed at an interactive prompt.",
+          "type": "string"
+        },
+        {
+          "const": "yes_flag",
+          "description": "`--yes` was supplied (grants `confirm` level only).",
+          "type": "string"
+        },
+        {
+          "const": "digest_token",
+          "description": "The caller presented the plan digest via `--approve`.",
+          "type": "string"
+        }
+      ]
+    },
+    "ApprovalRecord": {
+      "description": "An approval decision, bound to one plan ID and digest.",
+      "properties": {
+        "approval_id": {
+          "type": "string"
+        },
+        "decided_at": {
+          "type": "string"
+        },
+        "decision": {
+          "$ref": "#/$defs/ApprovalDecision"
+        },
+        "level_granted": {
+          "$ref": "#/$defs/ApprovalLevel",
+          "description": "The highest level this approval satisfies."
+        },
+        "method": {
+          "$ref": "#/$defs/ApprovalMethod"
+        },
+        "plan_digest": {
+          "type": "string"
+        },
+        "plan_id": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "approval_id",
+        "plan_id",
+        "plan_digest",
+        "decision",
+        "method",
+        "level_granted",
+        "decided_at"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "approval": {
+      "$ref": "#/$defs/ApprovalRecord"
+    }
+  },
+  "required": [
+    "approval"
+  ],
+  "title": "ApproveResult",
+  "type": "object"
+}

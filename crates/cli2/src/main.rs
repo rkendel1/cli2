@@ -190,6 +190,19 @@ enum Cmd {
         #[command(subcommand)]
         cmd: OutputCmd,
     },
+    /// Serve the local protocol on a Unix socket for embedding applications.
+    /// Prints one JSON "ready" line on stdout. Not needed to use the CLI.
+    Serve {
+        /// Socket path (default: $CLI2_HOME/runtime/cli2.sock).
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
+    },
+    /// Reject a recorded plan: nothing runs, and the plan can no longer be approved.
+    Reject {
+        plan_id: String,
+        #[arg(long)]
+        reason: Option<String>,
+    },
     /// Evaluate cli2 on realistic development tasks in isolated sandboxes.
     Eval {
         #[command(subcommand)]
@@ -454,6 +467,15 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
     match cli.command {
         // Handled before configuration is loaded (see the top of this function).
         Some(Cmd::ShellInit { .. } | Cmd::Completions { .. }) => Ok(0),
+        Some(Cmd::Schema { name: Some(n) }) if n.starts_with("protocol.") => {
+            let key = &n["protocol.".len()..];
+            let (_, schema) = cli2_protocol::schemas()
+                .into_iter()
+                .find(|(k, _)| *k == key)
+                .ok_or_else(|| EngineError::NotFound(format!("no protocol schema named {key}")))?;
+            print_json(&schema);
+            Ok(0)
+        }
         Some(Cmd::Schema { name }) => {
             let all = cli2_core::schemas();
             match name {
@@ -660,6 +682,7 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
                 timeout_secs: None,
                 capture_help: false,
                 interactive,
+                ..Default::default()
             };
             let quiet = output.is_some();
             let result = if json {
@@ -754,6 +777,41 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
                 print!("{}", render::eval_report(&report));
             }
             Ok(0)
+        }
+        Some(Cmd::Serve { socket }) => {
+            let socket = socket.unwrap_or_else(|| config.home.join("runtime/cli2.sock"));
+            let runtime = std::sync::Arc::new(cli2::runtime::Runtime::new(config));
+            let server = cli2::server::Server::bind(runtime.clone(), &socket)
+                .map_err(|e| EngineError::Invalid(e.to_string()))?;
+            let reconciled = runtime
+                .reconcile()
+                .map_err(|e| EngineError::Invalid(e.to_string()))?;
+            let stop = server.stop_flag();
+            let _ = ctrlc::set_handler(move || stop.store(true, Ordering::SeqCst));
+            println!(
+                "{}",
+                serde_json::json!({
+                    "event": "ready",
+                    "socket": socket,
+                    "instance_id": runtime.instance_id(),
+                    "protocol_versions": cli2_protocol::SUPPORTED_VERSIONS,
+                    "reconciled_executions": reconciled,
+                })
+            );
+            let _ = std::io::stdout().flush();
+            eprintln!(
+                "cli2: serving protocol {:?} on {} (Ctrl-C to stop)",
+                cli2_protocol::SUPPORTED_VERSIONS,
+                socket.display()
+            );
+            server.serve();
+            runtime.shutdown(std::time::Duration::from_secs(5));
+            Ok(0)
+        }
+        Some(Cmd::Reject { plan_id, reason }) => {
+            let mut engine = Engine::open(config)?;
+            let result = engine.reject_plan(&plan_id, reason)?;
+            Ok(report(&engine, &result, json))
         }
         Some(Cmd::Workflow { cmd }) => {
             let mut engine = Engine::open(config)?;
@@ -858,6 +916,7 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
                 timeout_secs: timeout,
                 capture_help,
                 interactive,
+                ..Default::default()
             };
             let result = if json {
                 cli2::batch::run_batch(&mut engine, &file, &opts, &mut NonInteractive)?
@@ -994,6 +1053,7 @@ fn do_intent(
         timeout_secs: run.timeout,
         capture_help: run.capture_help,
         interactive,
+        ..Default::default()
     };
     let quiet = run.output.is_some();
     loop {

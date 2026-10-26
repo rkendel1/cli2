@@ -15,11 +15,13 @@ cli2-index = { path = "crates/cli2-index" }
 cli2-resolver = { path = "crates/cli2-resolver" }
 cli2-execution = { path = "crates/cli2-execution" }
 cli2-evidence = { path = "crates/cli2-evidence" }
+cli2-protocol = { path = "crates/cli2-protocol" }
+cli2-client = { path = "crates/cli2-client" }
 anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap = { version = "4", features = ["derive"] }
 clap_complete = "4"
-ctrlc = "3"
+ctrlc = { version = "3", features = ["termination"] }
 hex = "0.4"
 jsonschema = { version = "0.60", default-features = false }
 libc = "0.2"

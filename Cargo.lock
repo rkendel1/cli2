@@ -248,11 +248,13 @@ dependencies = [
  "anyhow",
  "clap",
  "clap_complete",
+ "cli2-client",
  "cli2-core",
  "cli2-discovery",
  "cli2-evidence",
  "cli2-execution",
  "cli2-index",
+ "cli2-protocol",
  "cli2-resolver",
  "ctrlc",
  "hex",
@@ -263,6 +265,17 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "cli2-client"
+version = "0.1.0"
+dependencies = [
+ "cli2-core",
+ "cli2-protocol",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
@@ -324,6 +337,16 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "cli2-protocol"
+version = "0.1.0"
+dependencies = [
+ "cli2-core",
+ "schemars",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

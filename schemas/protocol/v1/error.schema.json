@@ -1,0 +1,108 @@
+{
+  "$defs": {
+    "ErrorCode": {
+      "oneOf": [
+        {
+          "enum": [
+            "not_found",
+            "plan_rejected",
+            "already_executed",
+            "internal"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "invalid_request",
+          "description": "The line was not a valid request envelope.",
+          "type": "string"
+        },
+        {
+          "const": "invalid_params",
+          "description": "The parameters did not match the operation's schema or limits.",
+          "type": "string"
+        },
+        {
+          "const": "unsupported_protocol_version",
+          "description": "No protocol version in common (see `supported_versions` in the details).",
+          "type": "string"
+        },
+        {
+          "const": "unsupported_operation",
+          "description": "The server does not implement this operation.",
+          "type": "string"
+        },
+        {
+          "const": "not_initialized",
+          "description": "`hello` must be the first request on a connection.",
+          "type": "string"
+        },
+        {
+          "const": "unauthorized",
+          "description": "The peer is not an authorized local client.",
+          "type": "string"
+        },
+        {
+          "const": "project_invalid",
+          "description": "`project` is not an absolute path to an existing directory.",
+          "type": "string"
+        },
+        {
+          "const": "plan_modified",
+          "description": "The stored plan no longer matches its digest.",
+          "type": "string"
+        },
+        {
+          "const": "approval_mismatch",
+          "description": "The approval does not belong to this plan and digest.",
+          "type": "string"
+        },
+        {
+          "const": "approval_required",
+          "description": "The plan needs an approval that was not provided.",
+          "type": "string"
+        },
+        {
+          "const": "forbidden",
+          "description": "Policy forbids this operation; it cannot be approved.",
+          "type": "string"
+        },
+        {
+          "const": "stale_plan",
+          "description": "The environment changed since the plan was made; plan again.",
+          "type": "string"
+        },
+        {
+          "const": "conflict",
+          "description": "The request conflicts with current state (e.g. an idempotency key reused with different inputs).",
+          "type": "string"
+        },
+        {
+          "const": "busy",
+          "description": "The runtime is at capacity; retry later.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "code": {
+      "$ref": "#/$defs/ErrorCode"
+    },
+    "details": true,
+    "message": {
+      "type": "string"
+    },
+    "retryable": {
+      "default": false,
+      "description": "Whether retrying the same request may succeed.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "code",
+    "message"
+  ],
+  "title": "ErrorBody",
+  "type": "object"
+}

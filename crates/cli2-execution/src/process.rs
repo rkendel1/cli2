@@ -18,6 +18,32 @@ use cli2_core::Termination;
 /// Default cap on captured bytes per stream.
 pub const DEFAULT_MAX_OUTPUT: usize = 8 * 1024 * 1024;
 
+/// Which output stream a chunk came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamKind {
+    Stdout,
+    Stderr,
+}
+
+/// Observes a running process. Callbacks run on the runtime's threads and must
+/// not block: they are for reporting, never for controlling the process.
+pub trait ProcessObserver: Send + Sync {
+    /// The process was started.
+    fn spawned(&self, _pid: u32) {}
+    /// A chunk of output, as it is read (before any capture limit is applied).
+    fn output(&self, _stream: StreamKind, _chunk: &[u8]) {}
+}
+
+/// A shareable observer handle.
+#[derive(Clone)]
+pub struct Observer(pub std::sync::Arc<dyn ProcessObserver>);
+
+impl std::fmt::Debug for Observer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Observer")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ProcessSpec {
     pub program: PathBuf,
@@ -27,6 +53,8 @@ pub struct ProcessSpec {
     pub max_output_bytes: usize,
     /// Grace period between SIGTERM and SIGKILL.
     pub kill_grace: Duration,
+    /// Optional live observer (status/output events).
+    pub observer: Option<Observer>,
 }
 
 impl ProcessSpec {
@@ -43,6 +71,7 @@ impl ProcessSpec {
             timeout,
             max_output_bytes: DEFAULT_MAX_OUTPUT,
             kill_grace: Duration::from_secs(2),
+            observer: None,
         }
     }
 }
@@ -92,6 +121,8 @@ impl CancelToken {
 fn spawn_reader<R: Read + Send + 'static>(
     mut r: R,
     cap: usize,
+    stream: StreamKind,
+    observer: Option<Observer>,
 ) -> thread::JoinHandle<(Vec<u8>, u64)> {
     thread::spawn(move || {
         let mut kept = Vec::new();
@@ -104,6 +135,9 @@ fn spawn_reader<R: Read + Send + 'static>(
                     total += n as u64;
                     let room = cap.saturating_sub(kept.len());
                     kept.extend_from_slice(&buf[..n.min(room)]);
+                    if let Some(o) = &observer {
+                        o.0.output(stream, &buf[..n]);
+                    }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                 Err(_) => break,
@@ -160,13 +194,20 @@ pub fn run(spec: &ProcessSpec, cancel: &CancelToken) -> ProcessOutcome {
         }
     };
     let pid = child.id();
+    if let Some(o) = &spec.observer {
+        o.0.spawned(pid);
+    }
     let out_reader = spawn_reader(
         child.stdout.take().expect("piped stdout"),
         spec.max_output_bytes,
+        StreamKind::Stdout,
+        spec.observer.clone(),
     );
     let err_reader = spawn_reader(
         child.stderr.take().expect("piped stderr"),
         spec.max_output_bytes,
+        StreamKind::Stderr,
+        spec.observer.clone(),
     );
 
     let mut forced: Option<Termination> = None;
@@ -299,6 +340,42 @@ mod tests {
         );
         let o = run(&spec, &token);
         assert_eq!(o.termination, Termination::Cancelled);
+    }
+
+    #[test]
+    fn observers_see_the_pid_and_each_stream_separately_as_it_arrives() {
+        use std::sync::Mutex;
+        #[derive(Default)]
+        struct Rec {
+            pid: Mutex<Option<u32>>,
+            out: Mutex<Vec<u8>>,
+            err: Mutex<Vec<u8>>,
+        }
+        impl ProcessObserver for Rec {
+            fn spawned(&self, pid: u32) {
+                *self.pid.lock().unwrap() = Some(pid);
+            }
+            fn output(&self, s: StreamKind, c: &[u8]) {
+                match s {
+                    StreamKind::Stdout => self.out.lock().unwrap().extend_from_slice(c),
+                    StreamKind::Stderr => self.err.lock().unwrap().extend_from_slice(c),
+                }
+            }
+        }
+        let rec = std::sync::Arc::new(Rec::default());
+        let mut spec = ProcessSpec::new(
+            "/bin/sh",
+            vec!["-c".into(), "echo one; echo oops >&2; echo two".into()],
+            "/",
+            Duration::from_secs(10),
+        );
+        spec.observer = Some(Observer(rec.clone()));
+        let o = run(&spec, &CancelToken::new());
+        assert_eq!(*rec.pid.lock().unwrap(), o.pid);
+        assert_eq!(*rec.out.lock().unwrap(), b"one\ntwo\n");
+        assert_eq!(*rec.err.lock().unwrap(), b"oops\n");
+        // The captured result is unaffected by observing.
+        assert_eq!(o.stdout, b"one\ntwo\n");
     }
 
     #[test]

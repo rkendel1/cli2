@@ -472,6 +472,14 @@ name-matches with an unknown interface (the `grep` case); (3) retrieval recall
 for conversational wording; (4) a larger paired sample before drawing any
 conclusion about the model.
 
+## Embedding
+
+Other applications can use cli2 without scraping terminal output: a typed Rust
+API (`cli2::runtime::Runtime`) and a versioned local protocol over a Unix socket
+(`cli2 serve`). Planning never executes, approval is bound to a plan's exact
+digest, and every execution goes through the same authority path as the CLI. See
+[docs/embedding.md](docs/embedding.md). The CLI needs no background service.
+
 ## Commands
 
 | Command | Purpose |
@@ -492,6 +500,8 @@ conclusion about the model.
 | `cli2 history search [TEXT] [--verified-only] [--resolver apple-fm]` | Find past workflows resembling a request, with live validity and an explanation. |
 | `cli2 workflow show ID` / `replay ID [--no-exec] [--arg N=V]` / `reindex` | Inspect a workflow; get a **fresh plan** from it (never executes); rebuild the derived index. |
 | `cli2 batch --request-file FILE [--yes]` / `--show BATCH_ID` | Run a structured batch of requests. |
+| `cli2 serve [--socket PATH]` | Serve the local protocol for embedding applications (see docs/embedding.md). |
+| `cli2 reject PLAN_ID [--reason TEXT]` | Reject a recorded plan: nothing runs and it can no longer be approved. |
 | `cli2 shell-init zsh` | Print the optional zsh integration (`c2`, completion). Writes nothing. |
 | `cli2 completions zsh` | Print a standalone zsh completion script generated from the CLI definition. |
 

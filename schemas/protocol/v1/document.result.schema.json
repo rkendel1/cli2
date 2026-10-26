@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "document": true,
+    "schema": {
+      "description": "The schema of `document` (`cli2.task.v1`, `cli2.history_search.v1`, …).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "document"
+  ],
+  "title": "DocumentResult",
+  "type": "object"
+}

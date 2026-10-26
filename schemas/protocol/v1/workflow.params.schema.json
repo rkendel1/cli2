@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "bindings": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "default": {},
+      "description": "`workflow.replan` only: inputs for the fresh plan.",
+      "type": "object"
+    },
+    "project": {
+      "type": "string"
+    },
+    "workflow_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "project",
+    "workflow_id"
+  ],
+  "title": "WorkflowParams",
+  "type": "object"
+}

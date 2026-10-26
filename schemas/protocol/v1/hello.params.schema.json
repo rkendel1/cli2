@@ -1,0 +1,41 @@
+{
+  "$defs": {
+    "ClientInfo": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "client": {
+      "$ref": "#/$defs/ClientInfo"
+    },
+    "versions": {
+      "description": "Protocol versions the client can speak, any order.",
+      "items": {
+        "format": "uint32",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "client",
+    "versions"
+  ],
+  "title": "HelloParams",
+  "type": "object"
+}

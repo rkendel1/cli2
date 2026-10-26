@@ -1,0 +1,1237 @@
+{
+  "$defs": {
+    "ApprovalLevel": {
+      "description": "The approval a plan needs before the runtime will execute it.",
+      "oneOf": [
+        {
+          "const": "none",
+          "description": "Well-characterized read-only operation; runs under the default policy.",
+          "type": "string"
+        },
+        {
+          "const": "confirm",
+          "description": "Requires confirmation; `--yes` may grant it non-interactively.",
+          "type": "string"
+        },
+        {
+          "const": "explicit",
+          "description": "Requires explicit approval of this exact plan (interactive `yes`, or the\nplan digest passed via `--approve`). `--yes` is not sufficient.",
+          "type": "string"
+        },
+        {
+          "const": "forbidden",
+          "description": "Cannot be approved under the active policy.",
+          "type": "string"
+        }
+      ]
+    },
+    "ApprovalMethod": {
+      "oneOf": [
+        {
+          "const": "policy_automatic",
+          "description": "No approval was needed under the default policy.",
+          "type": "string"
+        },
+        {
+          "const": "interactive",
+          "description": "A person confirmed at an interactive prompt.",
+          "type": "string"
+        },
+        {
+          "const": "yes_flag",
+          "description": "`--yes` was supplied (grants `confirm` level only).",
+          "type": "string"
+        },
+        {
+          "const": "digest_token",
+          "description": "The caller presented the plan digest via `--approve`.",
+          "type": "string"
+        }
+      ]
+    },
+    "ApprovalPolicyOutcome": {
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/ApprovalLevel"
+        },
+        "requirements": {
+          "items": {
+            "$ref": "#/$defs/ApprovalRequirement"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "level",
+        "requirements"
+      ],
+      "type": "object"
+    },
+    "ApprovalRequirement": {
+      "properties": {
+        "effect": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EffectClass"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "$ref": "#/$defs/ApprovalLevel"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "level",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "ApprovalSummary": {
+      "properties": {
+        "approval_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "granted": {
+          "type": "boolean"
+        },
+        "method": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApprovalMethod"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan_digest": {
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "required": {
+          "$ref": "#/$defs/ApprovalLevel"
+        }
+      },
+      "required": [
+        "required",
+        "granted",
+        "plan_digest",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "Candidate": {
+      "description": "A ranked candidate considered during resolution.",
+      "properties": {
+        "capability_id": {
+          "type": "string"
+        },
+        "invocation": {
+          "description": "The argument vector this candidate would run, when constructible.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/CapabilityKind"
+        },
+        "reasons": {
+          "description": "Why the candidate scored as it did, or why it is not viable.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "score": {
+          "format": "double",
+          "type": "number"
+        },
+        "viable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "capability_id",
+        "kind",
+        "score",
+        "viable",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "CapabilityKind": {
+      "description": "What sort of thing a capability is.",
+      "oneOf": [
+        {
+          "const": "executable",
+          "description": "An executable file found on `PATH`.",
+          "type": "string"
+        },
+        {
+          "const": "project_task",
+          "description": "A task defined by a project manifest (npm script, Make target, ...).",
+          "type": "string"
+        },
+        {
+          "const": "shell_operation",
+          "description": "A shell operation. Not produced by slice one discovery: built-ins are not\nrepresented because their invocation context cannot be captured accurately\nwith an executable + argument vector.",
+          "type": "string"
+        }
+      ]
+    },
+    "Check": {
+      "description": "A deterministic check evaluated by runtime code after execution.",
+      "oneOf": [
+        {
+          "description": "The process exit status equals `expected`. This is process-level evidence\nonly: it never by itself establishes task-level success.",
+          "properties": {
+            "expected": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": {
+              "const": "process_exit_status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "expected"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A file exists after execution (optionally modified after the step started).",
+          "properties": {
+            "modified_after_start": {
+              "default": false,
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "const": "file_exists",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A file or directory exists after execution.",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "const": "path_exists",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Captured standard output contains the given text.",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "const": "stdout_contains",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "CheckResult": {
+      "properties": {
+        "check": {
+          "$ref": "#/$defs/Check"
+        },
+        "detail": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/CheckStatus"
+        },
+        "task_level": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "check",
+        "task_level",
+        "status",
+        "detail"
+      ],
+      "type": "object"
+    },
+    "CheckStatus": {
+      "enum": [
+        "passed",
+        "failed",
+        "skipped"
+      ],
+      "type": "string"
+    },
+    "Clarification": {
+      "properties": {
+        "missing_inputs": {
+          "default": [],
+          "description": "Required parameters that have no value, as `capability_id:parameter`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "options": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ClarificationOption"
+          },
+          "type": "array"
+        },
+        "question": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "type": "object"
+    },
+    "ClarificationOption": {
+      "properties": {
+        "capability_id": {
+          "type": "string"
+        },
+        "invocation": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "capability_id",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "Constraints": {
+      "additionalProperties": false,
+      "description": "Explicit constraints. Unspecified constraints are recorded as absent and are\nnever interpreted as permission.",
+      "properties": {
+        "modify_files": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "network": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NetworkConstraint"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "EffectCertainty": {
+      "description": "How firmly the effect assessment is established.",
+      "oneOf": [
+        {
+          "const": "unknown",
+          "description": "Nothing is known. Unknown effects are never treated as read-only.",
+          "type": "string"
+        },
+        {
+          "const": "heuristic",
+          "description": "Guessed from names or script bodies.",
+          "type": "string"
+        },
+        {
+          "const": "declared",
+          "description": "Declared by a user (bound to the capability fingerprint).",
+          "type": "string"
+        }
+      ]
+    },
+    "EffectClass": {
+      "description": "Classes of effect an operation may have.",
+      "oneOf": [
+        {
+          "enum": [
+            "read_only",
+            "modifies_files",
+            "deletes",
+            "publishes",
+            "deploys",
+            "privilege_escalation"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "network",
+          "description": "Network access / external communication.",
+          "type": "string"
+        }
+      ]
+    },
+    "Effects": {
+      "properties": {
+        "certainty": {
+          "$ref": "#/$defs/EffectCertainty"
+        },
+        "classes": {
+          "description": "Possible effects. Empty when certainty is `unknown`.",
+          "items": {
+            "$ref": "#/$defs/EffectClass"
+          },
+          "type": "array"
+        },
+        "confidence": {
+          "format": "double",
+          "type": "number"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "classes",
+        "certainty",
+        "source",
+        "confidence"
+      ],
+      "type": "object"
+    },
+    "Event": {
+      "description": "A typed execution event (`cli2.event.v1`). `seq` is per execution, from 1.",
+      "oneOf": [
+        {
+          "properties": {
+            "approval_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "plan_id": {
+              "type": "string"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "execution_started",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "plan_id",
+            "request_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "argv": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "capability_id": {
+              "type": "string"
+            },
+            "index": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "pid": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "step_started",
+              "type": "string"
+            },
+            "working_directory": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "index",
+            "capability_id",
+            "argv",
+            "working_directory",
+            "pid"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A chunk of output. stdout and stderr are never mixed.",
+          "properties": {
+            "bytes": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "index": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "lossy": {
+              "type": "boolean"
+            },
+            "offset": {
+              "description": "Byte offset of this chunk within its stream.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "stream": {
+              "$ref": "#/$defs/Stream"
+            },
+            "text": {
+              "description": "UTF-8 text (invalid bytes replaced; `lossy` says so).",
+              "type": "string"
+            },
+            "type": {
+              "const": "output",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "index",
+            "stream",
+            "text",
+            "lossy",
+            "offset",
+            "bytes"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/StepResult"
+            },
+            "type": {
+              "const": "step_finished",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "result"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "verification",
+              "type": "string"
+            },
+            "verification": {
+              "$ref": "#/$defs/Verification"
+            }
+          },
+          "required": [
+            "type",
+            "verification"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The durable outcome. `result.status` is the task status; the process\nstatus and verification are separate fields of the result.",
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/ExecutionResult"
+            },
+            "type": {
+              "const": "execution_finished",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "result"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "execution_id": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "execution_id",
+        "seq",
+        "at"
+      ],
+      "type": "object"
+    },
+    "ExecutionResult": {
+      "properties": {
+        "approval": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApprovalSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clarification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Clarification"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence_ref": {
+          "description": "Reference to the evidence record (`evidence:task:<request_id>`).",
+          "type": "string"
+        },
+        "limitations": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "message": {
+          "description": "One-line human summary. Agents should rely on the structured fields.",
+          "type": "string"
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Plan"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plan_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "process_status": {
+          "$ref": "#/$defs/ProcessStatus"
+        },
+        "rejection": {
+          "description": "Reasons the plan was rejected by constraints or policy.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/Status"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/StepResult"
+          },
+          "type": "array"
+        },
+        "verification": {
+          "$ref": "#/$defs/Verification"
+        }
+      },
+      "required": [
+        "schema_version",
+        "request_id",
+        "status",
+        "process_status",
+        "steps",
+        "verification",
+        "evidence_ref",
+        "message"
+      ],
+      "type": "object"
+    },
+    "NetworkConstraint": {
+      "oneOf": [
+        {
+          "const": "allow",
+          "description": "Network access is permitted.",
+          "type": "string"
+        },
+        {
+          "const": "deny",
+          "description": "Network access is forbidden; plans that may use the network are rejected.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "No statement either way. Not interpreted as permission.",
+          "type": "string"
+        }
+      ]
+    },
+    "Plan": {
+      "properties": {
+        "approval": {
+          "$ref": "#/$defs/ApprovalPolicyOutcome"
+        },
+        "candidates": {
+          "description": "Ranked candidates, best first.",
+          "items": {
+            "$ref": "#/$defs/Candidate"
+          },
+          "type": "array"
+        },
+        "constraints": {
+          "$ref": "#/$defs/Constraints"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "digest": {
+          "description": "SHA-256 over everything that determines what will run and how it is\njudged. Approvals are bound to this value.",
+          "type": "string"
+        },
+        "effects": {
+          "$ref": "#/$defs/Effects"
+        },
+        "intent": {
+          "type": "string"
+        },
+        "limitations": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "plan_id": {
+          "type": "string"
+        },
+        "rationale": {
+          "description": "Summary of why the plan fits the intent.",
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "risk": {
+          "$ref": "#/$defs/Risk"
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "selection_reason": {
+          "description": "Why the selected candidate was chosen (or why it was the only viable one).",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "type": "array"
+        },
+        "timeout_secs": {
+          "description": "Timeout applied to each step, in seconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "verification": {
+          "$ref": "#/$defs/VerificationProcedure"
+        }
+      },
+      "required": [
+        "schema_version",
+        "plan_id",
+        "request_id",
+        "created_at",
+        "intent",
+        "candidates",
+        "selection_reason",
+        "steps",
+        "constraints",
+        "timeout_secs",
+        "effects",
+        "risk",
+        "approval",
+        "verification",
+        "rationale",
+        "digest"
+      ],
+      "type": "object"
+    },
+    "PlannedCheck": {
+      "properties": {
+        "check": {
+          "$ref": "#/$defs/Check"
+        },
+        "source": {
+          "description": "Where the check came from (`runtime`, `caller_expectation`,\n`interface:output_parameter`, ...).",
+          "type": "string"
+        },
+        "task_level": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "check",
+        "task_level",
+        "source"
+      ],
+      "type": "object"
+    },
+    "ProcessStatus": {
+      "enum": [
+        "succeeded",
+        "failed",
+        "not_run"
+      ],
+      "type": "string"
+    },
+    "Risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "forbidden"
+      ],
+      "type": "string"
+    },
+    "Status": {
+      "oneOf": [
+        {
+          "const": "succeeded",
+          "description": "All steps ran, exited successfully, and no verification check failed.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "A step failed, timed out, or could not be started.",
+          "type": "string"
+        },
+        {
+          "const": "partially_succeeded",
+          "description": "Some steps succeeded before a later step failed.",
+          "type": "string"
+        },
+        {
+          "const": "awaiting_approval",
+          "description": "A plan exists but needs approval before it can run.",
+          "type": "string"
+        },
+        {
+          "const": "needs_clarification",
+          "description": "The intent is ambiguous or required inputs are missing.",
+          "type": "string"
+        },
+        {
+          "const": "cancelled",
+          "description": "Execution was cancelled.",
+          "type": "string"
+        },
+        {
+          "const": "verification_failed",
+          "description": "Processes succeeded but a task-level postcondition failed.",
+          "type": "string"
+        },
+        {
+          "const": "rejected",
+          "description": "The plan violates constraints or policy and cannot be approved.",
+          "type": "string"
+        },
+        {
+          "const": "planned",
+          "description": "A plan was produced and intentionally not executed.",
+          "type": "string"
+        }
+      ]
+    },
+    "Step": {
+      "description": "One concrete process invocation. Plans never rely on a shell interpreting a\nconcatenated command string.",
+      "properties": {
+        "arguments": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "capability_fingerprint": {
+          "type": "string"
+        },
+        "capability_id": {
+          "type": "string"
+        },
+        "executable": {
+          "description": "Executable name as known to the capability interface.",
+          "type": "string"
+        },
+        "executable_fingerprint": {
+          "description": "Fingerprint of the executable file at planning time.",
+          "type": "string"
+        },
+        "index": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "resolved_executable": {
+          "description": "Absolute path that will actually be executed.",
+          "type": "string"
+        },
+        "working_directory": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "capability_id",
+        "capability_fingerprint",
+        "executable",
+        "resolved_executable",
+        "executable_fingerprint",
+        "arguments",
+        "working_directory"
+      ],
+      "type": "object"
+    },
+    "StepResult": {
+      "properties": {
+        "arguments": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "capability_id": {
+          "type": "string"
+        },
+        "duration_ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "executable": {
+          "description": "Absolute path actually executed.",
+          "type": "string"
+        },
+        "exit_code": {
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "finished_at": {
+          "type": "string"
+        },
+        "index": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pid": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "signal": {
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "stderr_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stderr_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stderr_truncated": {
+          "type": "boolean"
+        },
+        "stdout_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stdout_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stdout_truncated": {
+          "type": "boolean"
+        },
+        "termination": {
+          "$ref": "#/$defs/Termination"
+        },
+        "working_directory": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "index",
+        "capability_id",
+        "executable",
+        "arguments",
+        "working_directory",
+        "termination",
+        "started_at",
+        "finished_at",
+        "duration_ms",
+        "stdout_bytes",
+        "stderr_bytes",
+        "stdout_truncated",
+        "stderr_truncated"
+      ],
+      "type": "object"
+    },
+    "Stream": {
+      "enum": [
+        "stdout",
+        "stderr"
+      ],
+      "type": "string"
+    },
+    "Termination": {
+      "oneOf": [
+        {
+          "const": "exited",
+          "description": "The process exited on its own.",
+          "type": "string"
+        },
+        {
+          "const": "signaled",
+          "description": "The process was terminated by a signal it did not receive from cli2.",
+          "type": "string"
+        },
+        {
+          "const": "timed_out",
+          "description": "cli2 killed the process after the timeout elapsed.",
+          "type": "string"
+        },
+        {
+          "const": "cancelled",
+          "description": "cli2 killed the process because execution was cancelled.",
+          "type": "string"
+        },
+        {
+          "const": "spawn_failed",
+          "description": "The process could not be started.",
+          "type": "string"
+        },
+        {
+          "const": "not_started",
+          "description": "The step was not started (an earlier step failed or the plan was blocked).",
+          "type": "string"
+        }
+      ]
+    },
+    "Verification": {
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/CheckResult"
+          },
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/VerificationStatus"
+        },
+        "task_level": {
+          "description": "Whether any task-level check was evaluated.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "status",
+        "task_level",
+        "checks"
+      ],
+      "type": "object"
+    },
+    "VerificationProcedure": {
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/PlannedCheck"
+          },
+          "type": "array"
+        },
+        "success_criteria": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "checks",
+        "success_criteria"
+      ],
+      "type": "object"
+    },
+    "VerificationStatus": {
+      "oneOf": [
+        {
+          "const": "passed",
+          "description": "Every check passed and at least one task-level check was performed.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "At least one check failed.",
+          "type": "string"
+        },
+        {
+          "const": "unverified",
+          "description": "Only process-level checks were possible: the processes succeeded, but task\nsuccess was not independently established.",
+          "type": "string"
+        },
+        {
+          "const": "not_run",
+          "description": "Verification did not run (nothing was executed, or execution failed).",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "events": {
+      "items": {
+        "$ref": "#/$defs/Event"
+      },
+      "type": "array"
+    },
+    "finished": {
+      "description": "No further events will be produced.",
+      "type": "boolean"
+    },
+    "gap_before_seq": {
+      "description": "Events before this point were not retained in memory (output beyond\nthe live buffer); the full output is in the evidence blobs.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "last_seq": {
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "events",
+    "last_seq",
+    "finished"
+  ],
+  "title": "EventsResult",
+  "type": "object"
+}
