@@ -11,7 +11,7 @@ pub mod path;
 pub mod project;
 
 pub use effects::{heuristic_effects_for_executable, heuristic_effects_for_task};
-pub use help::{parse_help, ParsedHelp};
+pub use help::{parse_help, sanitize as sanitize_help, ParsedHelp, PARSER_VERSION};
 pub use path::{executable_fingerprint, scan_path, PathScan};
 pub use project::{find_project_root, scan_project, ManifestInfo, ProjectScan};
 

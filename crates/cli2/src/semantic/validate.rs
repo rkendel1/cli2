@@ -77,7 +77,10 @@ pub enum ValidationError {
     #[error("response request_id {got:?} does not match {expected:?}")]
     RequestId { expected: String, got: String },
     #[error("the bridge reported {status}{}", .detail.as_ref().map(|d| format!(": {d}")).unwrap_or_default())]
-    NotARanking { status: String, detail: Option<String> },
+    NotARanking {
+        status: String,
+        detail: Option<String>,
+    },
     #[error("capability {0:?} was not among the submitted candidates")]
     UnknownCapability(String),
     #[error("capability {0:?} appears more than once")]
@@ -119,7 +122,10 @@ pub fn validate_ranking(
         other => {
             return Err(ValidationError::NotARanking {
                 status: other.into(),
-                detail: resp.error.as_ref().map(|e| format!("{}: {}", e.code, e.message)),
+                detail: resp
+                    .error
+                    .as_ref()
+                    .map(|e| format!("{}: {}", e.code, e.message)),
             })
         }
     };
@@ -153,7 +159,9 @@ pub fn validate_ranking(
         r.rank = i as u32 + 1;
     }
     if rankings.len() > submitted.len() {
-        return Err(ValidationError::Inconsistent("more rankings than candidates"));
+        return Err(ValidationError::Inconsistent(
+            "more rankings than candidates",
+        ));
     }
     match outcome {
         Outcome::Ranked if rankings.is_empty() => {
@@ -171,7 +179,9 @@ pub fn validate_ranking(
         }
     }
     if outcome == Outcome::Clarification && clarification.is_none() {
-        return Err(ValidationError::Inconsistent("clarification without a question"));
+        return Err(ValidationError::Inconsistent(
+            "clarification without a question",
+        ));
     }
     if outcome != Outcome::Clarification && clarification.is_some() {
         return Err(ValidationError::Inconsistent("unexpected clarification"));
@@ -185,12 +195,18 @@ pub fn validate_ranking(
 
 /// Validate and re-sanitize query-expansion terms. Terms are only ever matched
 /// against names in the real inventory.
-pub fn validate_terms(resp: &BridgeResponse, request_id: &str) -> Result<Vec<String>, ValidationError> {
+pub fn validate_terms(
+    resp: &BridgeResponse,
+    request_id: &str,
+) -> Result<Vec<String>, ValidationError> {
     check_envelope(resp, request_id)?;
     if resp.status != "expanded" {
         return Err(ValidationError::NotARanking {
             status: resp.status.clone(),
-            detail: resp.error.as_ref().map(|e| format!("{}: {}", e.code, e.message)),
+            detail: resp
+                .error
+                .as_ref()
+                .map(|e| format!("{}: {}", e.code, e.message)),
         });
     }
     let terms = resp
@@ -248,17 +264,31 @@ mod tests {
 
     #[test]
     fn accepts_a_consistent_ranking() {
-        let v = validate_ranking(&resp("ranked", vec![("b", 1, "high"), ("a", 2, "low")]), "r", &ids()).unwrap();
+        let v = validate_ranking(
+            &resp("ranked", vec![("b", 1, "high"), ("a", 2, "low")]),
+            "r",
+            &ids(),
+        )
+        .unwrap();
         assert_eq!(v.rankings[0].capability_id, "b");
     }
 
     #[test]
     fn rejects_every_documented_defect() {
         let cases: Vec<(BridgeResponse, &str)> = vec![
-            (resp("ranked", vec![("zzz", 1, "high")]), "unknown capability"),
-            (resp("ranked", vec![("a", 1, "high"), ("a", 2, "low")]), "duplicate"),
+            (
+                resp("ranked", vec![("zzz", 1, "high")]),
+                "unknown capability",
+            ),
+            (
+                resp("ranked", vec![("a", 1, "high"), ("a", 2, "low")]),
+                "duplicate",
+            ),
             (resp("ranked", vec![("a", 2, "high")]), "ranks"),
-            (resp("ranked", vec![("a", 1, "high"), ("b", 1, "low")]), "ranks"),
+            (
+                resp("ranked", vec![("a", 1, "high"), ("b", 1, "low")]),
+                "ranks",
+            ),
             (resp("ranked", vec![("a", 1, "certain")]), "relevance"),
             (resp("ranked", vec![]), "inconsistent"),
             (resp("no_match", vec![("a", 1, "high")]), "inconsistent"),
@@ -271,13 +301,21 @@ mod tests {
         let mut wrong_schema = resp("ranked", vec![("a", 1, "high")]);
         wrong_schema.schema_version = "cli2.apple_fm.response.v9".into();
         assert!(validate_ranking(&wrong_schema, "r", &ids()).is_err());
-        assert!(validate_ranking(&resp("ranked", vec![("a", 1, "high")]), "other", &ids()).is_err());
+        assert!(
+            validate_ranking(&resp("ranked", vec![("a", 1, "high")]), "other", &ids()).is_err()
+        );
     }
 
     #[test]
     fn terms_are_sanitized() {
         let mut r = resp("expanded", vec![]);
-        r.terms = Some(vec!["Grep".into(), "rm -rf /".into(), "rg".into(), "x".into(), "grep".into()]);
+        r.terms = Some(vec![
+            "Grep".into(),
+            "rm -rf /".into(),
+            "rg".into(),
+            "x".into(),
+            "grep".into(),
+        ]);
         assert_eq!(validate_terms(&r, "r").unwrap(), vec!["grep", "rg"]);
     }
 }

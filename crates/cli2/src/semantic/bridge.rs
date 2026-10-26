@@ -188,11 +188,9 @@ impl BridgeClient {
 
     pub fn locate(&self) -> Result<PathBuf, BridgeError> {
         let paths = self.search_paths();
-        paths
-            .iter()
-            .find(|p| p.is_file())
-            .cloned()
-            .ok_or_else(|| BridgeError::Missing(paths.iter().map(|p| p.display().to_string()).collect()))
+        paths.iter().find(|p| p.is_file()).cloned().ok_or_else(|| {
+            BridgeError::Missing(paths.iter().map(|p| p.display().to_string()).collect())
+        })
     }
 
     /// Send one request and decode the single response. Does not interpret it.
@@ -216,7 +214,14 @@ fn run_bounded(
     let mut cmd = Command::new(path);
     // Minimal environment: no credentials, tokens, or ambient configuration.
     cmd.env_clear();
-    for k in ["HOME", "TMPDIR", "LANG", "LC_ALL", "USER", "__CF_USER_TEXT_ENCODING"] {
+    for k in [
+        "HOME",
+        "TMPDIR",
+        "LANG",
+        "LC_ALL",
+        "USER",
+        "__CF_USER_TEXT_ENCODING",
+    ] {
         if let Some(v) = std::env::var_os(k) {
             cmd.env(k, v);
         }

@@ -30,11 +30,15 @@ fn engine(env: &Env, bridge: &std::path::Path, mode: ResolverMode, fallback_none
     let mut config = Config::from_env().unwrap();
     config.home = env.home.clone();
     config.path_var = env.path.clone();
-    let mut s = cli2::semantic::ResolverSettings::default();
-    s.provider = cli2::semantic::Provider::AppleFoundationModels;
-    if fallback_none {
-        s.fallback = cli2::semantic::Fallback::None;
-    }
+    let s = cli2::semantic::ResolverSettings {
+        provider: cli2::semantic::Provider::AppleFoundationModels,
+        fallback: if fallback_none {
+            cli2::semantic::Fallback::None
+        } else {
+            cli2::semantic::Fallback::Deterministic
+        },
+        ..Default::default()
+    };
     config.resolver = Some(s);
     let mut e = Engine::open(config).unwrap();
     e.set_semantic(AppleFmRanker::with_client(
@@ -45,10 +49,21 @@ fn engine(env: &Env, bridge: &std::path::Path, mode: ResolverMode, fallback_none
     e
 }
 
-fn plan(e: &mut Engine, dir: &std::path::Path, intent: &str) -> Result<cli2_core::ExecutionResult, EngineError> {
+fn plan(
+    e: &mut Engine,
+    dir: &std::path::Path,
+    intent: &str,
+) -> Result<cli2_core::ExecutionResult, EngineError> {
     let mut req = RequestInput::new(intent);
     req.context.working_directory = Some(dir.display().to_string());
-    e.run(req, &RunOptions { execute: false, ..Default::default() }, &mut NonInteractive)
+    e.run(
+        req,
+        &RunOptions {
+            execute: false,
+            ..Default::default()
+        },
+        &mut NonInteractive,
+    )
 }
 
 const RANK_TEST_HIGH: &str = r#"{"schema_version":"cli2.apple_fm.response.v1","request_id":"%s","status":"ranked","rankings":[{"capability_id":"project-script:npm:test","rank":1,"relevance":"high","reason":"runs checks"}],"clarification":null,"bridge_version":"fake","model":{"provider":"apple-foundation-models","local":true}}"#;
@@ -80,7 +95,9 @@ fn a_valid_ranking_selects_among_supplied_candidates_and_is_recorded() {
     assert!(!ev.fallback);
     let rep = ev.report.as_ref().unwrap();
     assert_eq!(rep.validation, "valid");
-    assert!(rep.submitted.contains(&"project-script:npm:test".to_string()));
+    assert!(rep
+        .submitted
+        .contains(&"project-script:npm:test".to_string()));
     assert_eq!(rep.bridge_version.as_deref(), Some("fake"));
 }
 
@@ -105,7 +122,10 @@ fn an_unknown_capability_is_rejected_and_never_reaches_planning() {
     let r = plan(&mut e, &proj, "xyzzy plugh").unwrap();
     assert_eq!(r.status, Status::NeedsClarification);
     assert!(e.last_semantic().unwrap().fallback);
-    assert!(r.limitations.iter().any(|l| l.contains("deterministic resolver produced")));
+    assert!(r
+        .limitations
+        .iter()
+        .any(|l| l.contains("deterministic resolver produced")));
 }
 
 #[test]
@@ -117,7 +137,10 @@ fn malformed_output_cannot_reach_planning() {
     let mut e = engine(&env, &bridge, ResolverMode::AppleFm, true);
     assert!(plan(&mut e, &proj, "xyzzy plugh").is_err());
     let mut e = engine(&env, &bridge, ResolverMode::Auto, false);
-    assert_eq!(plan(&mut e, &proj, "xyzzy plugh").unwrap().status, Status::NeedsClarification);
+    assert_eq!(
+        plan(&mut e, &proj, "xyzzy plugh").unwrap().status,
+        Status::NeedsClarification
+    );
 }
 
 #[test]
@@ -132,7 +155,11 @@ fn the_model_cannot_change_arguments_effects_or_approval() {
     let p = r.plan.unwrap();
     assert_eq!(p.steps[0].executable, "npm");
     assert_eq!(p.steps[0].arguments, vec!["run", "publish-package"]);
-    assert_eq!(p.approval.level, cli2_core::ApprovalLevel::Explicit, "policy, not the model, decides");
+    assert_eq!(
+        p.approval.level,
+        cli2_core::ApprovalLevel::Explicit,
+        "policy, not the model, decides"
+    );
 }
 
 #[test]

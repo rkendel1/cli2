@@ -112,7 +112,10 @@ pub fn run_benchmark(
     let cases: Vec<Value> = text
         .lines()
         .filter(|l| !l.trim().is_empty())
-        .map(|l| serde_json::from_str(l).map_err(|e| EngineError::Invalid(format!("{}: {e}", cases_file.display()))))
+        .map(|l| {
+            serde_json::from_str(l)
+                .map_err(|e| EngineError::Invalid(format!("{}: {e}", cases_file.display())))
+        })
         .collect::<Result<_, _>>()?;
 
     let status = model_status(settings);
@@ -121,16 +124,25 @@ pub fn run_benchmark(
     std::fs::create_dir_all(&tmp)?;
     let work = tmp.join("work");
     copy_dir(&repo_root.join("fixtures"), &work)?;
-    let mut path = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect::<Vec<_>>();
+    let mut path =
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()).collect::<Vec<_>>();
     path.push(work.join("tools"));
     let mut config = Config::from_env()?;
     config.home = tmp.join("home");
-    config.path_var = std::env::join_paths(path).map_err(|e| EngineError::Invalid(e.to_string()))?;
+    config.path_var =
+        std::env::join_paths(path).map_err(|e| EngineError::Invalid(e.to_string()))?;
     let mut engine_settings = settings.clone();
     engine_settings.provider = crate::semantic::Provider::AppleFoundationModels;
     config.resolver = Some(engine_settings);
     let mut engine = Engine::open(config)?;
-    let opts = RunOptions { execute: false, yes: false, approve_token: None, timeout_secs: None, capture_help: false, interactive: false };
+    let opts = RunOptions {
+        execute: false,
+        yes: false,
+        approve_token: None,
+        timeout_secs: None,
+        capture_help: false,
+        interactive: false,
+    };
 
     let mut reports = Vec::new();
     for case in &cases {
@@ -138,15 +150,45 @@ pub fn run_benchmark(
         let intent = case["intent"].as_str().unwrap_or("").to_string();
         let exp = &case["expect"];
         let outcome = exp["outcome"].as_str().unwrap_or("rank").to_string();
-        let accept: Vec<String> = exp["accept"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
+        let accept: Vec<String> = exp["accept"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
         let mut r = CaseReport {
-            id, intent: intent.clone(), outcome_expected: outcome.clone(), skipped: None,
-            semantic_status: None, deterministic_status: None, fallback: false, model_state: None,
-            deterministic_order: vec![], semantic_order: vec![], deterministic_top1: None, semantic_top1: None,
-            deterministic_top3: None, semantic_top3: None, ranking_ok: None, plan_ok: None, selected: None,
-            invalid_response: false, invalid_plan: false, latency_ms: 0,
+            id,
+            intent: intent.clone(),
+            outcome_expected: outcome.clone(),
+            skipped: None,
+            semantic_status: None,
+            deterministic_status: None,
+            fallback: false,
+            model_state: None,
+            deterministic_order: vec![],
+            semantic_order: vec![],
+            deterministic_top1: None,
+            semantic_top1: None,
+            deterministic_top3: None,
+            semantic_top3: None,
+            ranking_ok: None,
+            plan_ok: None,
+            selected: None,
+            invalid_response: false,
+            invalid_plan: false,
+            latency_ms: 0,
         };
-        let missing: Vec<&str> = case["requires"].as_array().map(|a| a.iter().filter_map(|v| v.as_str()).filter(|t| !which(t)).collect()).unwrap_or_default();
+        let missing: Vec<&str> = case["requires"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str())
+                    .filter(|t| !which(t))
+                    .collect()
+            })
+            .unwrap_or_default();
         if !missing.is_empty() {
             r.skipped = Some(format!("missing tool(s): {}", missing.join(", ")));
             reports.push(r);
@@ -184,7 +226,9 @@ pub fn run_benchmark(
             }
         };
         r.semantic_status = Some(status_of(&sem));
-        r.selected = sem["plan"]["steps"][0]["capability_id"].as_str().map(String::from);
+        r.selected = sem["plan"]["steps"][0]["capability_id"]
+            .as_str()
+            .map(String::from);
         let ev = engine.last_semantic().cloned();
         if let Some(ev) = &ev {
             r.fallback = ev.fallback;
@@ -192,9 +236,12 @@ pub fn run_benchmark(
                 r.deterministic_order = rep.order_before.clone();
                 r.semantic_order = rep.order_after.clone();
                 r.invalid_response = rep.validation.starts_with("rejected")
-                    || rep.error.as_deref().is_some_and(|e| e.contains("invalid_model_output") || e.contains("invalid_response"));
+                    || rep.error.as_deref().is_some_and(|e| {
+                        e.contains("invalid_model_output") || e.contains("invalid_response")
+                    });
                 if let Some(sel) = &r.selected {
-                    r.invalid_plan = !rep.submitted.contains(sel) && !rep.order_before.contains(sel);
+                    r.invalid_plan =
+                        !rep.submitted.contains(sel) && !rep.order_before.contains(sel);
                 }
             }
         }
@@ -208,7 +255,10 @@ pub fn run_benchmark(
         let planned = r.semantic_status.as_deref() == Some("planned");
         let approval = sem["plan"]["approval"]["level"].as_str().unwrap_or("");
         let clarif = r.semantic_status.as_deref() == Some("needs_clarification");
-        let options = sem["clarification"]["options"].as_array().map(|a| a.len()).unwrap_or(0);
+        let options = sem["clarification"]["options"]
+            .as_array()
+            .map(|a| a.len())
+            .unwrap_or(0);
         r.ranking_ok = Some(match outcome.as_str() {
             "rank" => r.semantic_top1 == Some(true),
             "rank_or_inadequate" => r.semantic_top1 == Some(true) || !planned,
@@ -220,8 +270,11 @@ pub fn run_benchmark(
             _ => false,
         });
         r.plan_ok = Some(match outcome.as_str() {
-            "rank" => planned && r.selected.as_deref().is_some_and(|s| matches(&accept, s))
-                && exp["approval"].as_str().is_none_or(|a| a == approval),
+            "rank" => {
+                planned
+                    && r.selected.as_deref().is_some_and(|s| matches(&accept, s))
+                    && exp["approval"].as_str().is_none_or(|a| a == approval)
+            }
             _ => r.ranking_ok == Some(true),
         });
         reports.push(r);
@@ -231,8 +284,14 @@ pub fn run_benchmark(
     let ran: Vec<&CaseReport> = reports.iter().filter(|c| c.skipped.is_none()).collect();
     let count = |f: &dyn Fn(&CaseReport) -> bool| ran.iter().filter(|c| f(c)).count();
     let with_accept: Vec<&&CaseReport> = ran.iter().filter(|c| c.semantic_top1.is_some()).collect();
-    let rank_cases: Vec<&&CaseReport> = ran.iter().filter(|c| c.outcome_expected == "rank").collect();
-    let amb: Vec<&&CaseReport> = ran.iter().filter(|c| c.outcome_expected == "ambiguous").collect();
+    let rank_cases: Vec<&&CaseReport> = ran
+        .iter()
+        .filter(|c| c.outcome_expected == "rank")
+        .collect();
+    let amb: Vec<&&CaseReport> = ran
+        .iter()
+        .filter(|c| c.outcome_expected == "ambiguous")
+        .collect();
     let mut lat: Vec<u64> = ran.iter().map(|c| c.latency_ms).collect();
     lat.sort();
     let attempted = ran.len();
@@ -243,16 +302,58 @@ pub fn run_benchmark(
         cases_total: reports.len(),
         cases_run: attempted,
         cases_skipped: reports.len() - attempted,
-        top1_accuracy_deterministic: rate(with_accept.iter().filter(|c| c.deterministic_top1 == Some(true)).count(), with_accept.len()),
-        top1_accuracy_semantic: rate(with_accept.iter().filter(|c| c.semantic_top1 == Some(true)).count(), with_accept.len()),
-        top3_recall_deterministic: rate(with_accept.iter().filter(|c| c.deterministic_top3 == Some(true)).count(), with_accept.len()),
-        top3_recall_semantic: rate(with_accept.iter().filter(|c| c.semantic_top3 == Some(true)).count(), with_accept.len()),
-        invalid_capability_reference_rate: rate(count(&|c: &CaseReport| c.invalid_response), attempted),
+        top1_accuracy_deterministic: rate(
+            with_accept
+                .iter()
+                .filter(|c| c.deterministic_top1 == Some(true))
+                .count(),
+            with_accept.len(),
+        ),
+        top1_accuracy_semantic: rate(
+            with_accept
+                .iter()
+                .filter(|c| c.semantic_top1 == Some(true))
+                .count(),
+            with_accept.len(),
+        ),
+        top3_recall_deterministic: rate(
+            with_accept
+                .iter()
+                .filter(|c| c.deterministic_top3 == Some(true))
+                .count(),
+            with_accept.len(),
+        ),
+        top3_recall_semantic: rate(
+            with_accept
+                .iter()
+                .filter(|c| c.semantic_top3 == Some(true))
+                .count(),
+            with_accept.len(),
+        ),
+        invalid_capability_reference_rate: rate(
+            count(&|c: &CaseReport| c.invalid_response),
+            attempted,
+        ),
         invalid_plan_rate: rate(count(&|c: &CaseReport| c.invalid_plan), attempted),
-        unnecessary_clarification_rate: rate(rank_cases.iter().filter(|c| c.semantic_status.as_deref() == Some("needs_clarification")).count(), rank_cases.len()),
-        missed_ambiguity_rate: rate(amb.iter().filter(|c| c.semantic_status.as_deref() != Some("needs_clarification")).count(), amb.len()),
-        ranking_pass_semantic: rate(count(&|c: &CaseReport| c.ranking_ok == Some(true)), attempted),
-        latency_ms_mean: (!lat.is_empty()).then(|| lat.iter().sum::<u64>() as f64 / lat.len() as f64),
+        unnecessary_clarification_rate: rate(
+            rank_cases
+                .iter()
+                .filter(|c| c.semantic_status.as_deref() == Some("needs_clarification"))
+                .count(),
+            rank_cases.len(),
+        ),
+        missed_ambiguity_rate: rate(
+            amb.iter()
+                .filter(|c| c.semantic_status.as_deref() != Some("needs_clarification"))
+                .count(),
+            amb.len(),
+        ),
+        ranking_pass_semantic: rate(
+            count(&|c: &CaseReport| c.ranking_ok == Some(true)),
+            attempted,
+        ),
+        latency_ms_mean: (!lat.is_empty())
+            .then(|| lat.iter().sum::<u64>() as f64 / lat.len() as f64),
         latency_ms_p50: lat.get(lat.len() / 2).copied(),
         inference_availability_rate: rate(count(&|c| !c.fallback), attempted),
         deterministic_fallback_rate: rate(count(&|c: &CaseReport| c.fallback), attempted),

@@ -24,16 +24,51 @@ use serde::Serialize;
 
 use cli2_core::{
     Candidate, Capability, CapabilityKind, Check, Clarification, ClarificationOption,
-    EffectCertainty, Effects, InterfaceCompleteness, PlannedCheck, RecordedRequest, Step,
-    VerificationProcedure,
+    EffectCertainty, Effects, InterfaceCapture, InterfaceCompleteness, ParameterRole, PlannedCheck,
+    RecordedRequest, Step, VerificationProcedure,
 };
 
-use terms::{content_stems, equivalents, extract_values, stem, words};
+use terms::{
+    content_stems, equivalents, extract_values, is_path_like, search_subject, stem, words,
+};
 
 /// Minimum score for a capability to be selected.
 pub const MIN_SCORE: f64 = 3.0;
 /// Candidates within this margin of the best are considered competing.
 pub const AMBIGUITY_MARGIN: f64 = 1.0;
+/// When the best match cannot be planned, comparably scored alternatives are
+/// offered (and are candidates for help capture).
+pub const ALTERNATIVE_MARGIN: f64 = 4.0;
+/// Score for a plannable capability that structurally fits a search request
+/// but has no lexical match, and the bonus when it also has one.
+const STRUCTURAL_SCORE: f64 = 6.0;
+const STRUCTURAL_BONUS: f64 = 3.0;
+
+/// Whether the capability's verified interface takes a search term and its
+/// own description (captured help) says it searches.
+fn takes_search_term(cap: &Capability) -> bool {
+    if !cap.interface.source.starts_with("help_output")
+        || cap.interface.completeness < InterfaceCompleteness::Inferred
+        || !cap
+            .interface
+            .parameters
+            .iter()
+            .any(|p| p.role() == ParameterRole::SearchTerm)
+    {
+        return false;
+    }
+    let mut text = cap
+        .purpose
+        .as_ref()
+        .map(|p| p.value.clone())
+        .unwrap_or_default();
+    if let Some(h) = &cap.help {
+        text.push(' ');
+        text.extend(h.excerpt.chars().take(600));
+    }
+    let toks = content_stems(&text);
+    equivalents("search").iter().any(|e| toks.contains(e))
+}
 
 const OUTPUT_PARAMETER_NAMES: &[&str] = &[
     "out",
@@ -180,6 +215,9 @@ pub struct Draft {
     pub verification: VerificationProcedure,
     pub rationale: String,
     pub limitations: Vec<String>,
+    /// Provenance of the interface the invocation was built from, when it
+    /// came from captured help output.
+    pub interface_capture: Option<InterfaceCapture>,
 }
 
 #[derive(Debug, Clone)]
@@ -202,6 +240,10 @@ struct Scored<'a> {
 enum Unbuildable {
     RunnerMissing(String),
     InterfaceUnknown,
+    /// Some of the interface was recognized in help output, not enough to call it.
+    InterfacePartial(String),
+    /// Help was run but yielded nothing trustworthy.
+    CaptureFailed(String),
     MissingInputs(Vec<String>),
     BadBinding(String),
 }
@@ -214,6 +256,14 @@ impl Unbuildable {
                 "the interface of `{}` is not characterized; cli2 will not guess its arguments",
                 cap.name
             ),
+            Unbuildable::InterfacePartial(d) => format!(
+                "only part of the interface of `{}` was understood ({d}); cli2 will not guess the rest",
+                cap.name
+            ),
+            Unbuildable::CaptureFailed(d) => format!(
+                "the interface of `{}` could not be learned from its help output ({d})",
+                cap.name
+            ),
             Unbuildable::MissingInputs(m) => format!("missing required input(s): {}", m.join(", ")),
             Unbuildable::BadBinding(b) => b.clone(),
         }
@@ -223,6 +273,7 @@ impl Unbuildable {
 pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
     let intent = ctx.request.intent.trim();
     let (values, unquoted) = extract_values(intent);
+    let subject = search_subject(intent);
     let intent_stems = content_stems(&unquoted);
     let raw_words = words(&unquoted);
     let mentions_project = raw_words.iter().any(|w| w == "project" || w == "projects");
@@ -269,6 +320,26 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
             score = 1000.0;
             reasons.insert(0, "selected by the caller".into());
         }
+        let built = build_arguments(
+            cap,
+            &values,
+            subject.as_deref(),
+            &ctx.request.bindings,
+            &env_by_id,
+        );
+        // Structural fit: the request states a search subject, and this
+        // capability's *verified* interface takes a search term and its own
+        // description says it searches. Only plannable capabilities benefit.
+        if subject.is_some() && built.is_ok() && takes_search_term(cap) {
+            score = if score > 0.0 {
+                score + STRUCTURAL_BONUS
+            } else {
+                STRUCTURAL_SCORE
+            };
+            reasons.push(
+                "its verified interface takes a search term, its description says it searches, and the request names what to search for".into(),
+            );
+        }
         if score <= 0.0 {
             // Wide retrieval (semantic ranking only): admit project tasks and
             // capabilities whose name matches a proposed term, with a zero
@@ -287,7 +358,6 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
             score = 0.0;
             reasons.push("retrieved for semantic ranking (no lexical match)".into());
         }
-        let built = build_arguments(cap, &values, &ctx.request.bindings, &env_by_id);
         let mut candidate = Candidate {
             capability_id: cap.id.clone(),
             kind: cap.kind,
@@ -422,9 +492,19 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
                 best.cap.id, best.cap.name
             ),
             Err(Unbuildable::MissingInputs(m)) => format!(
-                " Provide {} with --arg NAME=VALUE (or quote the value in the intent).",
-                m.join(", ")
+                " Provide {} with --arg NAME=VALUE (or quote the value in the intent).{}",
+                m.join(", "),
+                if best.cap.interface.parameters.iter().any(|p| {
+                    m.contains(&p.name) && p.role() == ParameterRole::Path && !p.required && p.omitted_means.is_none()
+                }) {
+                    " Its help does not say what happens when the path is omitted, so cli2 will not omit it."
+                } else {
+                    ""
+                }
             ),
+            Err(Unbuildable::InterfacePartial(_)) => {
+                " Another capability with a fully understood interface may fit; `cli2 describe` shows what was recognized.".to_string()
+            }
             _ => String::new(),
         };
         return Resolution::Clarify {
@@ -434,7 +514,22 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
                     "The best match, `{}`, cannot be planned yet: {reason}.{hint}",
                     best.cap.id
                 ),
-                options: vec![option_for(best.cap, &best.candidate)],
+                options: {
+                    let mut o = vec![option_for(best.cap, &best.candidate)];
+                    o.extend(
+                        scored
+                            .iter()
+                            .filter(|s| {
+                                s.cap.id != best.cap.id
+                                    && s.candidate.score >= MIN_SCORE
+                                    && s.candidate.score + ALTERNATIVE_MARGIN
+                                        >= best.candidate.score
+                            })
+                            .take(2)
+                            .map(|s| option_for(s.cap, &s.candidate)),
+                    );
+                    o
+                },
                 missing_inputs: missing,
             },
             limitations,
@@ -520,6 +615,21 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
             });
         }
     }
+    let mut searched = None;
+    if cap.interface.source.starts_with("help_output") {
+        for (param, value) in cap.interface.parameters.iter().zip(args.iter().skip(fixed)) {
+            if param.role() == ParameterRole::SearchTerm {
+                checks.push(PlannedCheck {
+                    check: Check::StdoutContains {
+                        text: value.clone(),
+                    },
+                    task_level: true,
+                    source: format!("interface:search_term:{}", param.name),
+                });
+                searched = Some(value.clone());
+            }
+        }
+    }
     for exp in &ctx.request.expectations {
         checks.push(PlannedCheck {
             check: exp.clone(),
@@ -549,6 +659,11 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
         limitations.push(
             "No task-level postcondition is known for this capability; a zero exit status shows only that the process completed, not that the task succeeded.".into(),
         );
+    }
+    if let Some(term) = &searched {
+        limitations.push(format!(
+            "Success is judged by the output mentioning {term:?} as well as a zero exit status; most search tools exit 1 when nothing matches, which is reported as a failure, not as success. The search is literal to what the tool does with the pattern (a regex tool treats it as a regex)."
+        ));
     }
     limitations
         .push("Execution is not sandboxed; the process runs with your user's permissions.".into());
@@ -581,8 +696,19 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
         CapabilityKind::ProjectTask => format!("defined in {}", cap.location.path),
         _ => format!("found at {}", cap.location.path),
     };
+    let interface_note = match &cap.interface.capture {
+        Some(c) if cap.interface.source.starts_with("help_output") => format!(
+            " Interface learned from `{} {}` captured at {} (parser v{}; usage: {}).",
+            cap.name,
+            c.method.join(" "),
+            c.captured_at,
+            c.parser_version,
+            c.usage_line.as_deref().unwrap_or("unknown")
+        ),
+        _ => String::new(),
+    };
     let rationale = format!(
-        "{} {} ({where_from}){}.",
+        "{} {} ({where_from}){}.{interface_note}",
         cap.id,
         cap.purpose
             .as_ref()
@@ -604,6 +730,11 @@ pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
         verification,
         rationale,
         limitations,
+        interface_capture: cap
+            .interface
+            .capture
+            .clone()
+            .filter(|_| cap.interface.source.starts_with("help_output")),
     }))
 }
 
@@ -754,14 +885,38 @@ fn runner_location(
 fn build_arguments(
     cap: &Capability,
     values: &[String],
+    subject: Option<&str>,
     bindings: &BTreeMap<String, String>,
     env: &BTreeMap<&str, &Capability>,
 ) -> Result<Vec<String>, Unbuildable> {
     if runner_location(cap, env).is_none() {
         return Err(Unbuildable::RunnerMissing(cap.interface.executable.clone()));
     }
-    if cap.interface.completeness == InterfaceCompleteness::Unknown {
-        return Err(Unbuildable::InterfaceUnknown);
+    match cap.interface.completeness {
+        InterfaceCompleteness::Unknown => {
+            return Err(match &cap.interface.capture {
+                Some(c) => Unbuildable::CaptureFailed(format!(
+                    "{:?}: {}",
+                    c.status,
+                    c.uncertainties.join("; ")
+                )),
+                None => Unbuildable::InterfaceUnknown,
+            })
+        }
+        InterfaceCompleteness::Partial => {
+            let uncertain = cap
+                .interface
+                .capture
+                .as_ref()
+                .map(|c| c.uncertainties.join("; "))
+                .filter(|u| !u.is_empty())
+                .unwrap_or_else(|| "the usage form was not recognized".into());
+            return Err(Unbuildable::InterfacePartial(format!(
+                "{} option(s) recognized; {uncertain}",
+                cap.interface.options.len()
+            )));
+        }
+        _ => {}
     }
     for name in bindings.keys() {
         if !cap.interface.parameters.iter().any(|p| &p.name == name) {
@@ -771,16 +926,41 @@ fn build_arguments(
             )));
         }
     }
+    // Values from help-derived interfaces are bound by what the help says each
+    // positional is; nothing is added that the request did not supply.
+    let from_help = cap.interface.source.starts_with("help_output");
     let mut args = cap.interface.arguments.clone();
     let mut pool: Vec<&String> = values.iter().collect();
     let mut missing = Vec::new();
+    let mut subject_used = false;
     for p in &cap.interface.parameters {
         if let Some(v) = bindings.get(&p.name) {
             pool.retain(|x| *x != v);
             args.push(v.clone());
             continue;
         }
+        if from_help && p.role() == ParameterRole::SearchTerm {
+            // A quoted value wins; otherwise a subject the request states plainly.
+            let quoted = pool.iter().position(|v| !is_path_like(v));
+            if let Some(i) = quoted {
+                args.push(pool.remove(i).clone());
+            } else if let (Some(sub), false) = (subject, subject_used) {
+                subject_used = true;
+                args.push(sub.to_string());
+            } else {
+                missing.push(p.name.clone());
+            }
+            continue;
+        }
         if p.variadic {
+            if pool.is_empty()
+                && from_help
+                && p.role() == ParameterRole::Path
+                && p.omitted_means.is_none()
+                && !p.required
+            {
+                missing.push(p.name.clone());
+            }
             args.extend(pool.drain(..).cloned());
             continue;
         }
@@ -788,12 +968,26 @@ fn build_arguments(
             args.push(pool.remove(0).clone());
         } else if p.required {
             missing.push(p.name.clone());
+        } else if from_help && p.role() == ParameterRole::Path && p.omitted_means.is_none() {
+            // Omitting an optional input path may make the tool read stdin or
+            // do something the help never described. Do not assume.
+            missing.push(p.name.clone());
         } else {
             break; // optional positionals after a gap cannot be supplied
         }
     }
     if !missing.is_empty() {
         return Err(Unbuildable::MissingInputs(missing));
+    }
+    if from_help && !pool.is_empty() {
+        return Err(Unbuildable::BadBinding(format!(
+            "the value(s) {} were given but `{}` has no positional parameter to receive them",
+            pool.iter()
+                .map(|v| format!("{v:?}"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            cap.name
+        )));
     }
     for a in &args[cap.interface.arguments.len()..] {
         if a.starts_with('-') {

@@ -20,6 +20,32 @@
         }
       ]
     },
+    "CaptureStatus": {
+      "description": "How an interface capture ended.",
+      "oneOf": [
+        {
+          "enum": [
+            "timed_out"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "parsed",
+          "description": "Help text was obtained and parsed (its completeness is on the interface).",
+          "type": "string"
+        },
+        {
+          "const": "no_usable_help",
+          "description": "The executable ran but produced nothing usable.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Could not be run, or was terminated abnormally.",
+          "type": "string"
+        }
+      ]
+    },
     "Characterization": {
       "description": "A user declaration about a capability. It is bound to the fingerprint at the\ntime of declaration and is discarded if the capability changes.",
       "properties": {
@@ -300,6 +326,17 @@
           },
           "type": "array"
         },
+        "capture": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InterfaceCapture"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How the interface was captured, when it came from help output."
+        },
         "completeness": {
           "$ref": "#/$defs/InterfaceCompleteness"
         },
@@ -312,6 +349,14 @@
           "description": "Flags documented by the capability (never invented).",
           "items": {
             "type": "string"
+          },
+          "type": "array"
+        },
+        "options": {
+          "default": [],
+          "description": "Options recognized in help output (never invented).",
+          "items": {
+            "$ref": "#/$defs/OptionSpec"
           },
           "type": "array"
         },
@@ -335,11 +380,94 @@
       ],
       "type": "object"
     },
+    "InterfaceCapture": {
+      "description": "Provenance of an interface obtained from `<exe> --help`. Bound to the\nexecutable's fingerprint: a different fingerprint means a different\nexecutable, and this record no longer applies.",
+      "properties": {
+        "alternate_usage_forms": {
+          "default": 0,
+          "description": "Further usage forms that were seen but not interpreted.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "captured_at": {
+          "type": "string"
+        },
+        "executable_fingerprint": {
+          "type": "string"
+        },
+        "executable_path": {
+          "type": "string"
+        },
+        "exit_code": {
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "method": {
+          "description": "Arguments passed to obtain help (explicit, user-consented).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "output_ref": {
+          "description": "Evidence reference of the full captured output, when there was any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parser_version": {
+          "description": "Version of the parser that produced the interface.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/CaptureStatus"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "uncertainties": {
+          "default": [],
+          "description": "What the parser could not determine, or why the capture failed.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "usage_line": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "captured_at",
+        "executable_path",
+        "executable_fingerprint",
+        "method",
+        "truncated",
+        "parser_version"
+      ],
+      "type": "object"
+    },
     "InterfaceCompleteness": {
       "oneOf": [
         {
           "const": "unknown",
           "description": "Nothing is known beyond the executable name.",
+          "type": "string"
+        },
+        {
+          "const": "partial",
+          "description": "Some options or positionals were recognized in help output, but the\nusage form as a whole was not understood. Not enough to build a call.",
           "type": "string"
         },
         {
@@ -386,11 +514,72 @@
       ],
       "type": "object"
     },
+    "OptionSpec": {
+      "description": "An option recognized in help output. Recognition is not endorsement: the\nplanner never adds an option the request did not explicitly call for.",
+      "properties": {
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "names": {
+          "description": "The option and its aliases, e.g. `[\"-n\", \"--line-number\"]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source": {
+          "description": "Where it was recognized: `help_output:options` or `help_output:usage`.",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/OptionValue"
+        },
+        "value_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "names",
+        "value",
+        "source"
+      ],
+      "type": "object"
+    },
+    "OptionValue": {
+      "description": "Whether a recognized option takes a value.",
+      "oneOf": [
+        {
+          "enum": [
+            "required",
+            "optional"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "none",
+          "description": "A flag.",
+          "type": "string"
+        }
+      ]
+    },
     "Parameter": {
       "description": "A positional input of a capability's interface.",
       "properties": {
         "name": {
           "type": "string"
+        },
+        "omitted_means": {
+          "description": "What omitting this parameter means, when the help text states it\n(e.g. \"searches the current directory\"). Absent: omission is not known\nto be harmless.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "required": {
           "type": "boolean"

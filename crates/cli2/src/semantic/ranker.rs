@@ -14,8 +14,7 @@ use cli2_core::{Candidate, Capability, EffectCertainty, NetworkConstraint, Recor
 use cli2_resolver::{ReportedRanking, SemanticRanker, SemanticReport, MIN_SCORE};
 
 use super::bridge::{
-    BridgeCandidate, BridgeClient, BridgeConstraints, BridgeRequest, BridgeResponse,
-    REQUEST_SCHEMA,
+    BridgeCandidate, BridgeClient, BridgeConstraints, BridgeRequest, BridgeResponse, REQUEST_SCHEMA,
 };
 use super::validate::{validate_ranking, validate_terms, Outcome, Relevance, Validated};
 use super::{ResolverSettings, PROVIDER_ID};
@@ -94,7 +93,13 @@ impl AppleFmRanker {
             .and_then(|resp| {
                 validate_terms(&resp, &id)
                     .map(|t| (t, resp.bridge_version.clone()))
-                    .map_err(|e| ("invalid_response".to_string(), e.to_string(), resp.availability.map(|a| a.state)))
+                    .map_err(|e| {
+                        (
+                            "invalid_response".to_string(),
+                            e.to_string(),
+                            resp.availability.map(|a| a.state),
+                        )
+                    })
             });
         match result {
             Ok((terms, version)) => {
@@ -119,7 +124,14 @@ impl AppleFmRanker {
         }
     }
 
-    fn fail(&self, mut report: SemanticReport, started: Instant, code: &str, msg: String, validation: &str) -> Result<(), String> {
+    fn fail(
+        &self,
+        mut report: SemanticReport,
+        started: Instant,
+        code: &str,
+        msg: String,
+        validation: &str,
+    ) -> Result<(), String> {
         report.status = "failed".into();
         report.validation = validation.into();
         report.error = Some(format!("{code}: {msg}"));
@@ -171,9 +183,21 @@ fn effects_summary(cap: &Capability) -> String {
                 .effects
                 .classes
                 .iter()
-                .map(|e| serde_json::to_value(e).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default())
+                .map(|e| {
+                    serde_json::to_value(e)
+                        .ok()
+                        .and_then(|v| v.as_str().map(str::to_string))
+                        .unwrap_or_default()
+                })
                 .collect();
-            format!("{} ({})", classes.join(", "), serde_json::to_value(c).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default())
+            format!(
+                "{} ({})",
+                classes.join(", "),
+                serde_json::to_value(c)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_string))
+                    .unwrap_or_default()
+            )
         }
     }
 }
@@ -193,7 +217,10 @@ fn bridge_candidate(cap: &Capability) -> BridgeCandidate {
         purpose: cap.purpose.as_ref().map(|p| p.value.clone()),
         interface_completeness: enum_str(&cap.interface.completeness),
         effects: effects_summary(cap),
-        help_excerpt: cap.help.as_ref().map(|h| h.excerpt.chars().take(400).collect()),
+        help_excerpt: cap
+            .help
+            .as_ref()
+            .map(|h| h.excerpt.chars().take(400).collect()),
     }
 }
 
@@ -203,7 +230,12 @@ fn clean_reason(s: &str) -> String {
         .chars()
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect();
-    flat.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(200).collect()
+    flat.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(200)
+        .collect()
 }
 
 impl SemanticRanker for AppleFmRanker {
@@ -230,7 +262,8 @@ impl SemanticRanker for AppleFmRanker {
         capabilities: &[&Capability],
     ) -> Result<(), String> {
         let started = Instant::now();
-        let order_before: Vec<String> = candidates.iter().map(|c| c.capability_id.clone()).collect();
+        let order_before: Vec<String> =
+            candidates.iter().map(|c| c.capability_id.clone()).collect();
         // Candidates arrive best-first; the model sees only the top slice.
         let n = candidates.len().min(self.0.max_candidates);
         let submitted: Vec<String> = order_before[..n].to_vec();
@@ -254,7 +287,10 @@ impl SemanticRanker for AppleFmRanker {
                 }
                 .into(),
             }),
-            candidates: capabilities[..n].iter().map(|c| bridge_candidate(c)).collect(),
+            candidates: capabilities[..n]
+                .iter()
+                .map(|c| bridge_candidate(c))
+                .collect(),
         };
 
         let resp: BridgeResponse = match self.0.client.call(&req) {
@@ -268,7 +304,13 @@ impl SemanticRanker for AppleFmRanker {
         let validated = match validate_ranking(&resp, &bridge_id, &submitted) {
             Ok(v) => v,
             Err(e) => {
-                return self.fail(report, started, "invalid_response", e.to_string(), &format!("rejected: {e}"));
+                return self.fail(
+                    report,
+                    started,
+                    "invalid_response",
+                    e.to_string(),
+                    &format!("rejected: {e}"),
+                );
             }
         };
         apply(&validated, &mut candidates[..n]);
@@ -356,8 +398,8 @@ pub fn apply(v: &Validated, candidates: &mut [Candidate]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cli2_core::CapabilityKind;
     use crate::semantic::validate::ValidRanking;
+    use cli2_core::CapabilityKind;
 
     fn cand(id: &str, score: f64) -> Candidate {
         Candidate {
@@ -389,13 +431,20 @@ mod tests {
         };
         apply(&v, &mut cs);
         assert!(cs[0].score >= MIN_SCORE && cs[0].score > cs[1].score);
-        assert!(!cs[0].viable && cs[0].invocation.is_none(), "viability and invocation are untouched");
+        assert!(
+            !cs[0].viable && cs[0].invocation.is_none(),
+            "viability and invocation are untouched"
+        );
     }
 
     #[test]
     fn no_match_demotes_but_never_touches_an_exact_match() {
         let mut cs = vec![cand("exact", 100.0), cand("weak", 5.0)];
-        let v = Validated { outcome: Outcome::NoMatch, rankings: vec![], clarification: None };
+        let v = Validated {
+            outcome: Outcome::NoMatch,
+            rankings: vec![],
+            clarification: None,
+        };
         apply(&v, &mut cs);
         assert_eq!(cs[0].score, 100.0);
         assert!(cs[1].score < MIN_SCORE);
@@ -406,11 +455,13 @@ mod tests {
         let mut cs = vec![cand("a", 0.0), cand("b", 0.0)];
         let v = Validated {
             outcome: Outcome::Clarification,
-            rankings: vec![ranking("a", 1, Relevance::High), ranking("b", 2, Relevance::High)],
+            rankings: vec![
+                ranking("a", 1, Relevance::High),
+                ranking("b", 2, Relevance::High),
+            ],
             clarification: Some("which?".into()),
         };
         apply(&v, &mut cs);
         assert_eq!(cs[0].score, cs[1].score);
     }
 }
-

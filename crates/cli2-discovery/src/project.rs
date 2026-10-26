@@ -203,8 +203,10 @@ impl RawTask {
                 arguments: self.arguments,
                 parameters: self.parameters,
                 known_flags: vec![],
+                options: vec![],
                 completeness: InterfaceCompleteness::Declared,
                 source: source_name.into(),
+                capture: None,
             },
             effects,
             postconditions: self.postconditions,
@@ -450,6 +452,7 @@ pub fn parse_justfile(text: &str) -> Vec<RawTask> {
                 required: !has_default && !p.starts_with('*'),
                 variadic,
                 source: "justfile".into(),
+                omitted_means: None,
             });
         }
         let purpose = match doc.take() {

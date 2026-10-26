@@ -11,7 +11,10 @@ fn ready() -> Option<ResolverSettings> {
     if st.ready {
         Some(s)
     } else {
-        eprintln!("SKIPPED live test: model not ready ({}); no inference was performed", st.state);
+        eprintln!(
+            "SKIPPED live test: model not ready ({}); no inference was performed",
+            st.state
+        );
         None
     }
 }
@@ -19,7 +22,10 @@ fn ready() -> Option<ResolverSettings> {
 #[test]
 fn live_status_never_reports_ready_without_the_framework_saying_so() {
     let st = model_status(&ResolverSettings::default());
-    assert_eq!(st.ready, st.model.availability.as_deref() == Some("available") && st.state == "ready");
+    assert_eq!(
+        st.ready,
+        st.model.availability.as_deref() == Some("available") && st.state == "ready"
+    );
 }
 
 #[test]

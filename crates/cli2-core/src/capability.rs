@@ -99,6 +99,9 @@ pub struct Location {
 pub enum InterfaceCompleteness {
     /// Nothing is known beyond the executable name.
     Unknown,
+    /// Some options or positionals were recognized in help output, but the
+    /// usage form as a whole was not understood. Not enough to build a call.
+    Partial,
     /// Parameters were inferred, e.g. from a usage line in help output.
     Inferred,
     /// The exact invocation is defined by a manifest or a user declaration.
@@ -116,6 +119,98 @@ pub struct Parameter {
     #[serde(default)]
     pub variadic: bool,
     pub source: String,
+    /// What omitting this parameter means, when the help text states it
+    /// (e.g. "searches the current directory"). Absent: omission is not known
+    /// to be harmless.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub omitted_means: Option<String>,
+}
+
+/// What a positional parameter is for, judged only by the name help output
+/// gave it. Used to bind values from the request; never to add arguments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParameterRole {
+    SearchTerm,
+    Path,
+    Other,
+}
+
+impl Parameter {
+    pub fn role(&self) -> ParameterRole {
+        match self.name.as_str() {
+            "pattern" | "patterns" | "query" | "regex" | "regexp" | "term" | "text" | "needle"
+            | "keyword" | "expression" | "string" => ParameterRole::SearchTerm,
+            "path" | "paths" | "file" | "files" | "dir" | "dirs" | "directory" | "directories"
+            | "folder" => ParameterRole::Path,
+            _ => ParameterRole::Other,
+        }
+    }
+}
+
+/// Whether a recognized option takes a value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OptionValue {
+    /// A flag.
+    None,
+    Required,
+    Optional,
+}
+
+/// An option recognized in help output. Recognition is not endorsement: the
+/// planner never adds an option the request did not explicitly call for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct OptionSpec {
+    /// The option and its aliases, e.g. `["-n", "--line-number"]`.
+    pub names: Vec<String>,
+    pub value: OptionValue,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Where it was recognized: `help_output:options` or `help_output:usage`.
+    pub source: String,
+}
+
+/// How an interface capture ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureStatus {
+    /// Help text was obtained and parsed (its completeness is on the interface).
+    Parsed,
+    /// The executable ran but produced nothing usable.
+    NoUsableHelp,
+    TimedOut,
+    /// Could not be run, or was terminated abnormally.
+    Failed,
+}
+
+/// Provenance of an interface obtained from `<exe> --help`. Bound to the
+/// executable's fingerprint: a different fingerprint means a different
+/// executable, and this record no longer applies.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct InterfaceCapture {
+    pub status: CaptureStatus,
+    pub captured_at: String,
+    pub executable_path: String,
+    pub executable_fingerprint: String,
+    /// Arguments passed to obtain help (explicit, user-consented).
+    pub method: Vec<String>,
+    pub exit_code: Option<i32>,
+    pub truncated: bool,
+    /// Evidence reference of the full captured output, when there was any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_ref: Option<String>,
+    /// Version of the parser that produced the interface.
+    pub parser_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage_line: Option<String>,
+    /// Further usage forms that were seen but not interpreted.
+    #[serde(default)]
+    pub alternate_usage_forms: u32,
+    /// What the parser could not determine, or why the capture failed.
+    #[serde(default)]
+    pub uncertainties: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -131,8 +226,14 @@ pub struct Interface {
     /// Flags documented by the capability (never invented).
     #[serde(default)]
     pub known_flags: Vec<String>,
+    /// Options recognized in help output (never invented).
+    #[serde(default)]
+    pub options: Vec<OptionSpec>,
     pub completeness: InterfaceCompleteness,
     pub source: String,
+    /// How the interface was captured, when it came from help output.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capture: Option<InterfaceCapture>,
 }
 
 /// Classes of effect an operation may have.

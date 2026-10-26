@@ -157,7 +157,9 @@ impl ResolverSettings {
         s.bridge_path = raw.bridge_path;
         if let Some(t) = raw.timeout_secs {
             if !(1..=300).contains(&t) {
-                return Err(format!("resolver.timeout_secs {t} must be between 1 and 300"));
+                return Err(format!(
+                    "resolver.timeout_secs {t} must be between 1 and 300"
+                ));
             }
             s.timeout_secs = t;
         }
@@ -169,7 +171,9 @@ impl ResolverSettings {
             }
             s.max_candidates = n;
         }
-        if s.provider == Provider::None && matches!(s.mode, Some(ResolverMode::AppleFm | ResolverMode::Auto)) {
+        if s.provider == Provider::None
+            && matches!(s.mode, Some(ResolverMode::AppleFm | ResolverMode::Auto))
+        {
             return Err("resolver.mode needs resolver.provider \"apple-foundation-models\"".into());
         }
         Ok(s)

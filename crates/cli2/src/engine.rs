@@ -7,7 +7,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use cli2_core::*;
-use cli2_discovery::{find_project_root, parse_help, scan_path, scan_project, ShellContext};
+use cli2_discovery::{
+    find_project_root, parse_help, sanitize_help, scan_path, scan_project, ShellContext,
+    PARSER_VERSION,
+};
 use cli2_evidence::{Journal, JournalError, Observation, StepObservation, TaskRecord, TaskSummary};
 use cli2_execution::{
     assess, authorize, grant, AuthorizationError, CancelToken, Policy, ProcessSpec,
@@ -18,13 +21,17 @@ use cli2_resolver::{
 };
 use serde::Serialize;
 
-use crate::semantic::{AppleFmRanker, Fallback, Provider, ResolverMode, ResolverSettings, PROVIDER_ID};
+use crate::semantic::{
+    AppleFmRanker, Fallback, Provider, ResolverMode, ResolverSettings, PROVIDER_ID,
+};
 
 /// Default per-step timeout.
 pub const DEFAULT_TIMEOUT_SECS: u64 = 600;
 const HELP_TIMEOUT: Duration = Duration::from_secs(5);
 const HELP_MAX_BYTES: usize = 64 * 1024;
 const HELP_EXCERPT_CHARS: usize = 4000;
+/// At most this many executables have `--help` run per request.
+const MAX_HELP_CAPTURES_PER_REQUEST: usize = 3;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -33,6 +40,8 @@ pub struct Config {
     /// The `PATH` value to discover executables from.
     pub path_var: OsString,
     pub default_timeout_secs: u64,
+    /// Bound on `<exe> --help` captures.
+    pub help_timeout: Duration,
     pub policy: Policy,
     /// Resolver settings; when `None`, read from `$CLI2_HOME/config.json`
     /// (absent file means deterministic resolution only).
@@ -73,6 +82,7 @@ impl Config {
             home,
             path_var: std::env::var_os("PATH").unwrap_or_default(),
             default_timeout_secs: DEFAULT_TIMEOUT_SECS,
+            help_timeout: HELP_TIMEOUT,
             policy,
             resolver: None,
         })
@@ -249,11 +259,48 @@ pub struct SemanticEvent {
     pub report: Option<SemanticReport>,
 }
 
+/// What `capture_interface` did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureNote {
+    /// `--help` was run and parsed.
+    Captured,
+    /// A valid stored capture was used; nothing was run.
+    Cached,
+    /// A stored capture was re-parsed by the current parser; nothing was run.
+    Reparsed,
+}
+
 /// A resolution plus how it was produced.
 struct Resolved {
     resolution: Resolution,
     event: Option<SemanticEvent>,
     notes: Vec<String>,
+}
+
+/// A captured interface is only valid for the executable it was captured from.
+/// Cheap check (one `stat` per captured executable): if the file on disk no
+/// longer matches, the interface is dropped from this resolution and reported.
+fn discard_stale_interfaces(caps: &mut [Capability]) -> Vec<String> {
+    let mut notes = Vec::new();
+    for c in caps.iter_mut() {
+        if c.kind != CapabilityKind::Executable || c.interface.capture.is_none() {
+            continue;
+        }
+        let live = cli2_discovery::executable_fingerprint(Path::new(&c.location.path)).ok();
+        if live.as_deref() != Some(c.fingerprint.as_str()) {
+            notes.push(format!(
+                "`{}` changed on disk since its interface was captured; the captured interface was not used. Run `cli2 scan`, then capture it again.",
+                c.name
+            ));
+            c.interface.parameters.clear();
+            c.interface.options.clear();
+            c.interface.known_flags.clear();
+            c.interface.capture = None;
+            c.interface.completeness = InterfaceCompleteness::Unknown;
+            c.help = None;
+        }
+    }
+    notes
 }
 
 fn settings_for(config: &Config) -> Result<ResolverSettings, EngineError> {
@@ -271,7 +318,12 @@ impl Engine {
         Ok(Self::assemble(config, index, journal, settings))
     }
 
-    fn assemble(config: Config, index: Index, journal: Journal, settings: ResolverSettings) -> Self {
+    fn assemble(
+        config: Config,
+        index: Index,
+        journal: Journal,
+        settings: ResolverSettings,
+    ) -> Self {
         let mode = settings.default_mode();
         let semantic = (settings.provider == Provider::AppleFoundationModels)
             .then(|| AppleFmRanker::new(&settings));
@@ -476,9 +528,30 @@ impl Engine {
         Ok(self.with_observations(vec![cap])?.remove(0))
     }
 
-    /// Capture bounded help output for an executable (explicit, on demand)
-    /// and record what it reveals, with provenance.
+    /// Obtain the interface of an executable from its own `--help` output
+    /// (explicit, user-consented, bounded) and record it with provenance.
+    ///
+    /// Lifecycle rules (deterministic):
+    /// * a parsed capture bound to the current fingerprint and parser version
+    ///   is reused without running anything;
+    /// * a capture made by an older parser is re-parsed from its saved output,
+    ///   without running anything (re-run only if that output is gone);
+    /// * a failed capture (timeout, no usable help, abnormal exit) is not
+    ///   retried automatically; `refresh` forces a new attempt;
+    /// * a changed executable has a new fingerprint, so its old interface was
+    ///   already discarded by the index and this captures afresh;
+    /// * a failure never leaves a trusted interface behind.
     pub fn capture_help(&mut self, id: &str, cwd: &Path) -> Result<Capability, EngineError> {
+        self.capture_interface(id, cwd, false).map(|(c, _)| c)
+    }
+
+    /// Like [`capture_help`](Self::capture_help); also says what happened.
+    pub fn capture_interface(
+        &mut self,
+        id: &str,
+        cwd: &Path,
+        refresh: bool,
+    ) -> Result<(Capability, CaptureNote), EngineError> {
         let mut cap = self.get_capability(id, cwd)?;
         if cap.kind != CapabilityKind::Executable {
             return Err(EngineError::Invalid(format!(
@@ -492,7 +565,42 @@ impl Engine {
                 "{id} changed since it was indexed; run `cli2 scan` first"
             )));
         }
-        let mut spec = ProcessSpec::new(path, vec!["--help".into()], cwd, HELP_TIMEOUT);
+        if let Some(prev) = cap.interface.capture.clone() {
+            if prev.executable_fingerprint == cap.fingerprint && !refresh {
+                match prev.status {
+                    CaptureStatus::Parsed if prev.parser_version == PARSER_VERSION => {
+                        return Ok((cap, CaptureNote::Cached));
+                    }
+                    CaptureStatus::Parsed => {
+                        if let Some(bytes) = prev
+                            .output_ref
+                            .as_deref()
+                            .and_then(|r| self.journal.read_blob(r).ok())
+                        {
+                            let text = String::from_utf8_lossy(&bytes).to_string();
+                            self.apply_capture(&mut cap, &text, prev.clone(), prev.status);
+                            self.index.put(&cap)?;
+                            return Ok((cap, CaptureNote::Reparsed));
+                        }
+                    }
+                    failed => {
+                        return Err(EngineError::Invalid(format!(
+                            "a previous help capture of `{}` failed ({failed:?} at {}); not retrying automatically. Use `cli2 describe {id} --capture-help --refresh-help` to try again",
+                            cap.name, prev.captured_at
+                        )));
+                    }
+                }
+            }
+        }
+
+        let method = vec!["--help".to_string()];
+        // Help runs in cli2's own data directory, not the user's project.
+        let mut spec = ProcessSpec::new(
+            path.clone(),
+            method.clone(),
+            &self.config.home,
+            self.config.help_timeout,
+        );
         spec.max_output_bytes = HELP_MAX_BYTES;
         let out = cli2_execution::run(&spec, &self.cancel);
         let raw = if out.stdout.is_empty() {
@@ -501,53 +609,125 @@ impl Engine {
             &out.stdout
         };
         let text = String::from_utf8_lossy(raw).to_string();
+        let output_ref = if raw.is_empty() {
+            None
+        } else {
+            Some(self.journal.store_blob(raw)?)
+        };
         self.journal.event(
             "system",
             "help_captured",
             &serde_json::json!({
                 "capability_id": id,
                 "fingerprint": cap.fingerprint,
+                "method": method,
                 "termination": out.termination,
                 "exit_code": out.exit_code,
-                "output_ref": self.journal.store_blob(raw)?,
+                "output_ref": output_ref,
+                "parser_version": PARSER_VERSION,
             }),
         )?;
-        if text.trim().is_empty() || out.termination != Termination::Exited {
-            return Err(EngineError::Invalid(format!(
-                "`{} --help` produced no usable help output ({:?}, exit {:?})",
-                cap.name, out.termination, out.exit_code
-            )));
-        }
-        let parsed = parse_help(&text, &cap.name);
-        cap.help = Some(HelpCapture {
+        let record = InterfaceCapture {
+            status: CaptureStatus::Parsed,
             captured_at: now_rfc3339(),
-            arguments: vec!["--help".into()],
+            executable_path: cap.location.path.clone(),
+            executable_fingerprint: cap.fingerprint.clone(),
+            method,
             exit_code: out.exit_code,
             truncated: out.stdout_truncated() || out.stderr_truncated(),
-            excerpt: text.chars().take(HELP_EXCERPT_CHARS).collect(),
-        });
-        if let Some(p) = parsed.purpose {
-            if cap
-                .characterization
-                .as_ref()
-                .and_then(|c| c.purpose.as_ref())
-                .is_none()
-            {
-                cap.purpose = Some(Provenanced::new(p, "help_output", 0.6));
-            }
-        }
-        cap.enrichment = cap.enrichment.max(EnrichmentState::Described);
-        if parsed.usage_complete {
-            cap.interface.parameters = parsed.parameters;
-            cap.interface.known_flags = parsed.flags;
-            cap.interface.completeness = InterfaceCompleteness::Inferred;
-            cap.interface.source = "help_output:usage".into();
-            cap.enrichment = cap.enrichment.max(EnrichmentState::Characterized);
-        } else {
-            cap.interface.known_flags = parsed.flags;
-        }
+            output_ref,
+            parser_version: PARSER_VERSION,
+            usage_line: None,
+            alternate_usage_forms: 0,
+            uncertainties: vec![],
+        };
+        let status = match out.termination {
+            Termination::Exited if !text.trim().is_empty() => CaptureStatus::Parsed,
+            Termination::Exited => CaptureStatus::NoUsableHelp,
+            Termination::TimedOut => CaptureStatus::TimedOut,
+            _ => CaptureStatus::Failed,
+        };
+        let status = self.apply_capture(&mut cap, &text, record, status);
         self.index.put(&cap)?;
-        Ok(cap)
+        match status {
+            CaptureStatus::Parsed => Ok((cap, CaptureNote::Captured)),
+            other => Err(EngineError::Invalid(format!(
+                "`{} --help` produced no usable help ({other:?}, exit {:?}); the interface stays unknown. The failure was recorded and will not be retried automatically",
+                cap.name, out.exit_code
+            ))),
+        }
+    }
+
+    /// Replace the capability's captured interface with what `text` yields.
+    /// Anything not understood stays unknown or partial; a failed capture
+    /// leaves no previously-trusted interface behind.
+    fn apply_capture(
+        &self,
+        cap: &mut Capability,
+        text: &str,
+        mut record: InterfaceCapture,
+        status: CaptureStatus,
+    ) -> CaptureStatus {
+        cap.interface.parameters.clear();
+        cap.interface.options.clear();
+        cap.interface.known_flags.clear();
+        cap.interface.completeness = InterfaceCompleteness::Unknown;
+        cap.interface.source = "path".into();
+        cap.help = None;
+        let mut status = status;
+        if status == CaptureStatus::Parsed {
+            let parsed = parse_help(text, &cap.name);
+            if !parsed.recognized_anything() {
+                status = CaptureStatus::NoUsableHelp;
+                record
+                    .uncertainties
+                    .push("the output was not recognizable as help text".into());
+            } else {
+                cap.help = Some(HelpCapture {
+                    captured_at: record.captured_at.clone(),
+                    arguments: record.method.clone(),
+                    exit_code: record.exit_code,
+                    truncated: record.truncated,
+                    excerpt: sanitize_help(text)
+                        .chars()
+                        .take(HELP_EXCERPT_CHARS)
+                        .collect(),
+                });
+                if let Some(p) = parsed.purpose.clone() {
+                    if cap
+                        .characterization
+                        .as_ref()
+                        .and_then(|c| c.purpose.as_ref())
+                        .is_none()
+                    {
+                        cap.purpose = Some(Provenanced::new(p, "help_output", 0.6));
+                    }
+                }
+                cap.enrichment = cap.enrichment.max(EnrichmentState::Described);
+                record.usage_line = parsed.usage_line.clone();
+                record.alternate_usage_forms = parsed.alternate_usage_forms;
+                record.uncertainties = parsed.uncertainties.clone();
+                cap.interface.known_flags = parsed.flags.clone();
+                cap.interface.options = parsed.options.clone();
+                if parsed.usage_complete {
+                    cap.interface.parameters = parsed.parameters;
+                    cap.interface.completeness = InterfaceCompleteness::Inferred;
+                    cap.interface.source = "help_output:usage".into();
+                    cap.enrichment = cap.enrichment.max(EnrichmentState::Characterized);
+                } else if !cap.interface.options.is_empty() || !parsed.parameters.is_empty() {
+                    cap.interface.completeness = InterfaceCompleteness::Partial;
+                    cap.interface.source = "help_output:partial".into();
+                }
+            }
+        } else {
+            record
+                .uncertainties
+                .push(format!("capture ended with {status:?}"));
+        }
+        record.status = status;
+        record.parser_version = PARSER_VERSION;
+        cap.interface.capture = Some(record);
+        status
     }
 
     /// Record a user declaration of effects (and optionally purpose). The
@@ -658,30 +838,37 @@ impl Engine {
         let mut resolution = self.resolve_recorded(&request, root.as_deref(), &mut notes)?;
         if opts.capture_help {
             if let Resolution::Clarify { clarification, .. } = &resolution {
-                // Only the single best uncharacterized executable is probed.
-                let mut target = None;
+                // Consent covers `--help` of the few offered executables whose
+                // interface is unknown and has not been attempted before.
+                let mut targets = Vec::new();
                 for o in &clarification.options {
+                    if targets.len() == MAX_HELP_CAPTURES_PER_REQUEST {
+                        break;
+                    }
                     let cap = self.get_capability(&o.capability_id, &wd)?;
                     if cap.kind == CapabilityKind::Executable
                         && cap.interface.completeness == InterfaceCompleteness::Unknown
-                        && cap.help.is_none()
+                        && cap.interface.capture.is_none()
                     {
-                        target = Some(cap);
-                        break;
+                        targets.push(cap);
                     }
                 }
-                if let Some(cap) = target {
+                let mut captured_any = false;
+                for cap in targets {
                     let id = cap.id.clone();
-                    {
-                        match self.capture_help(&id, &wd) {
-                            Ok(_) => notes.push(format!(
-                                "Captured `{} --help` to characterize {id} (requested with --capture-help).",
+                    match self.capture_interface(&id, &wd, false) {
+                        Ok(_) => {
+                            captured_any = true;
+                            notes.push(format!(
+                                "Captured `{} --help` to learn the interface of {id} (requested with --capture-help).",
                                 cap.name
-                            )),
-                            Err(e) => notes.push(format!("Help capture for {id} failed: {e}")),
+                            ));
                         }
-                        resolution = self.resolve_recorded(&request, root.as_deref(), &mut notes)?;
+                        Err(e) => notes.push(format!("Help capture for {id} failed: {e}")),
                     }
+                }
+                if captured_any {
+                    resolution = self.resolve_recorded(&request, root.as_deref(), &mut notes)?;
                 }
             }
         }
@@ -717,6 +904,18 @@ impl Engine {
             Resolution::Planned(d) => d,
         };
 
+        if let Some(cap) = &draft.interface_capture {
+            self.journal.event(
+                &request.request_id,
+                "interface_provenance",
+                &serde_json::json!({
+                    "capability_id": draft.selected.id,
+                    "interface_completeness": draft.selected.interface.completeness,
+                    "capture": cap,
+                    "arguments": draft.steps.first().map(|s| &s.arguments),
+                }),
+            )?;
+        }
         let assessment = assess(&draft.effects, &request.constraints, &self.config.policy);
         let mut limitations = notes;
         limitations.extend(draft.limitations.iter().cloned());
@@ -822,14 +1021,15 @@ impl Engine {
         })
     }
 
-    #[allow(clippy::type_complexity)]
+    #[allow(clippy::type_complexity, clippy::result_large_err)]
     fn resolve_request(
         &self,
         request: &RecordedRequest,
         root: Option<&str>,
     ) -> Result<Resolved, (EngineError, Option<SemanticEvent>)> {
         let wrap = |e: IndexError| (EngineError::from(e), None);
-        let caps = self.index.visible(root).map_err(wrap)?;
+        let mut caps = self.index.visible(root).map_err(wrap)?;
+        let stale_notes = discard_stale_interfaces(&mut caps);
         let history: BTreeMap<String, HistoryStats> = self
             .observations()
             .map_err(|e| (e, None))?
@@ -860,13 +1060,11 @@ impl Engine {
                     fallback_reason: None,
                     report: Some(report),
                 }),
-                notes: vec![],
+                notes: stale_notes.clone(),
             });
         };
 
-        let deterministic = || {
-            self.resolve_with(request, &caps, root, &history, &NoInference, &[])
-        };
+        let deterministic = || self.resolve_with(request, &caps, root, &history, &NoInference, &[]);
         if mode == ResolverMode::Deterministic {
             return Ok(Resolved {
                 resolution: deterministic(),
@@ -879,7 +1077,7 @@ impl Engine {
                     fallback_reason: None,
                     report: None,
                 }),
-                notes: vec![],
+                notes: stale_notes.clone(),
             });
         }
 
@@ -897,7 +1095,7 @@ impl Engine {
                     fallback_reason: None,
                     report: None,
                 }),
-                notes: vec![],
+                notes: stale_notes.clone(),
             });
         }
 
@@ -952,7 +1150,7 @@ impl Engine {
                 } else {
                     PROVIDER_ID
                 };
-                let mut notes = vec![];
+                let mut notes = stale_notes.clone();
                 if ordered_by == PROVIDER_ID {
                     notes.push(format!(
                         "Candidate ordering was produced with {PROVIDER_ID} (on-device) over {} retrieved candidates; the runtime validated the ranking and built any plan.",
@@ -990,9 +1188,13 @@ impl Engine {
                     Ok(Resolved {
                         resolution: det,
                         event: Some(event),
-                        notes: vec![format!(
-                            "Semantic ranking with {PROVIDER_ID} was not used ({why}); the deterministic resolver produced the candidate ordering."
-                        )],
+                        notes: {
+                            let mut n = stale_notes.clone();
+                            n.push(format!(
+                                "Semantic ranking with {PROVIDER_ID} was not used ({why}); the deterministic resolver produced the candidate ordering."
+                            ));
+                            n
+                        },
                     })
                 } else {
                     Err((

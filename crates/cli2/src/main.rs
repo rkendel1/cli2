@@ -145,8 +145,13 @@ enum Cmd {
     Describe {
         id: String,
         /// Run `<executable> --help` (bounded) and record what it reveals.
+        /// A valid stored capture is reused without running anything.
         #[arg(long)]
         capture_help: bool,
+        /// With --capture-help: capture again even if a capture (or a failed
+        /// attempt) is already recorded for this executable.
+        #[arg(long, requires = "capture_help")]
+        refresh_help: bool,
     },
     /// Declare a capability's effects (bound to its current fingerprint).
     Characterize {
@@ -312,10 +317,22 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
             }
             Ok(0)
         }
-        Some(Cmd::Describe { id, capture_help }) => {
+        Some(Cmd::Describe {
+            id,
+            capture_help,
+            refresh_help,
+        }) => {
             let mut engine = Engine::open(config)?;
             let cap = if capture_help {
-                engine.capture_help(&id, &cwd)?
+                let (cap, note) = engine.capture_interface(&id, &cwd, refresh_help)?;
+                if !json {
+                    eprintln!("cli2: {}", match note {
+                        cli2::CaptureNote::Captured => "ran `--help` and recorded the interface",
+                        cli2::CaptureNote::Cached => "a valid capture already exists; nothing was run",
+                        cli2::CaptureNote::Reparsed => "re-parsed the stored help output with the current parser; nothing was run",
+                    });
+                }
+                cap
             } else {
                 engine.get_capability(&id, &cwd)?
             };
@@ -374,9 +391,12 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
                 }
                 ModelCmd::Benchmark { file, repo } => {
                     let root = repo.or_else(find_repo_root).ok_or_else(|| {
-                        EngineError::Invalid("cannot find the repository (fixtures/, evals/); pass --repo".into())
+                        EngineError::Invalid(
+                            "cannot find the repository (fixtures/, evals/); pass --repo".into(),
+                        )
                     })?;
-                    let file = file.unwrap_or_else(|| root.join("evals/apple-foundation-models.jsonl"));
+                    let file =
+                        file.unwrap_or_else(|| root.join("evals/apple-foundation-models.jsonl"));
                     let rep = cli2::semantic::bench::run_benchmark(&root, &file, &settings)?;
                     if json {
                         print_json(&rep);
@@ -470,11 +490,15 @@ fn find_repo_root() -> Option<PathBuf> {
         .into_iter()
         .chain(exe.ancestors().skip(1).map(PathBuf::from))
         .flat_map(|d| d.ancestors().map(PathBuf::from).collect::<Vec<_>>())
-        .find(|d| d.join("evals/apple-foundation-models.jsonl").is_file() && d.join("fixtures").is_dir())
+        .find(|d| {
+            d.join("evals/apple-foundation-models.jsonl").is_file() && d.join("fixtures").is_dir()
+        })
 }
 
 fn parse_mode(run: &RunArgs) -> Option<cli2::semantic::ResolverMode> {
-    run.resolver.as_deref().and_then(cli2::semantic::ResolverMode::parse)
+    run.resolver
+        .as_deref()
+        .and_then(cli2::semantic::ResolverMode::parse)
 }
 
 fn build_request(intent: Vec<String>, run: &RunArgs) -> Result<RequestInput, EngineError> {

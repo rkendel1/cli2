@@ -202,7 +202,7 @@ pub fn extract_values(intent: &str) -> (Vec<String>, String) {
     (out, rest)
 }
 
-fn is_path_like(tok: &str) -> bool {
+pub fn is_path_like(tok: &str) -> bool {
     if tok.len() < 3 || tok.starts_with('-') {
         return false;
     }
@@ -248,5 +248,169 @@ mod tests {
         assert!(v.is_empty());
         let (v, _) = extract_values("summarize notes.md, please");
         assert_eq!(v, vec!["notes.md"]);
+    }
+}
+
+/// The thing being searched for, when the request states it unambiguously
+/// outside quotes: "references to X", "usages of X", "where X is used",
+/// "files named X", "containing X", "search for X". Exactly one word must
+/// follow the cue and be followed by the end of the request or a clear
+/// terminator ("in", "under", ...). Anything murkier yields `None` so the
+/// caller asks, rather than guessing a pattern.
+pub fn search_subject(intent: &str) -> Option<String> {
+    const TERMINATORS: &[&str] = &[
+        "in",
+        "within",
+        "under",
+        "across",
+        "inside",
+        "from",
+        "anywhere",
+        "please",
+        "is",
+        "are",
+        "was",
+        "being",
+        "appears",
+        "appear",
+        "used",
+        "referenced",
+        "defined",
+        "declared",
+        "throughout",
+        "using",
+        "with",
+        "via",
+        "by",
+        "through",
+        "on",
+        "at",
+    ];
+    const ARTICLES: &[&str] = &[
+        "the", "a", "an", "all", "any", "every", "each", "my", "our", "this",
+    ];
+    let toks: Vec<String> = intent
+        .split_whitespace()
+        .map(|t| {
+            t.trim_matches(|c: char| ",;:!?()\"'`".contains(c))
+                .trim_end_matches('.')
+                .to_string()
+        })
+        .filter(|t| !t.is_empty())
+        .collect();
+    let lower: Vec<String> = toks.iter().map(|t| t.to_lowercase()).collect();
+    let cue_after = |i: usize, n: usize| -> Option<String> {
+        // Cue ends before index i+n; skip articles, then take exactly one word.
+        let mut j = i + n;
+        while j < lower.len() && ARTICLES.contains(&lower[j].as_str()) {
+            j += 1;
+        }
+        let cand = toks.get(j)?;
+        let next = lower.get(j + 1);
+        let clean = cand
+            .chars()
+            .all(|c| c.is_alphanumeric() || "_-".contains(c));
+        let ends = next.is_none_or(|n| TERMINATORS.contains(&n.as_str()));
+        (clean
+            && ends
+            && !is_stop_word(&lower[j])
+            && !ARTICLES.contains(&lower[j].as_str())
+            && !TERMINATORS.contains(&lower[j].as_str()))
+        .then(|| cand.clone())
+    };
+    // "<cue words> X"
+    const CUES: &[&[&str]] = &[
+        &["references", "to"],
+        &["reference", "to"],
+        &["usages", "of"],
+        &["usage", "of"],
+        &["uses", "of"],
+        &["occurrences", "of"],
+        &["mentions", "of"],
+        &["instances", "of"],
+        &["search", "for"],
+        &["searching", "for"],
+        &["look", "for"],
+        &["grep", "for"],
+        &["containing"],
+        &["mentioning"],
+        &["named"],
+        &["called"],
+    ];
+    for i in 0..lower.len() {
+        for cue in CUES {
+            if lower[i..].len() >= cue.len()
+                && lower[i..i + cue.len()]
+                    .iter()
+                    .map(String::as_str)
+                    .eq(cue.iter().copied())
+            {
+                if let Some(v) = cue_after(i, cue.len()) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    // "where X is used" / "everywhere X is used"
+    for i in 0..lower.len() {
+        if matches!(lower[i].as_str(), "where" | "everywhere") {
+            if let (Some(x), Some(is), Some(used)) =
+                (toks.get(i + 1), lower.get(i + 2), lower.get(i + 3))
+            {
+                if is == "is"
+                    && matches!(
+                        used.as_str(),
+                        "used" | "referenced" | "defined" | "mentioned" | "called"
+                    )
+                    && x.chars().all(|c| c.is_alphanumeric() || "_-".contains(c))
+                {
+                    return Some(x.clone());
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod subject_tests {
+    use super::search_subject as s;
+
+    #[test]
+    fn extracts_only_unambiguous_subjects() {
+        assert_eq!(
+            s("find all references to authentication").as_deref(),
+            Some("authentication")
+        );
+        assert_eq!(
+            s("show me everywhere authentication is used").as_deref(),
+            Some("authentication")
+        );
+        assert_eq!(
+            s("find usages of parse_config in src").as_deref(),
+            Some("parse_config")
+        );
+        assert_eq!(s("list files named config").as_deref(), Some("config"));
+        assert_eq!(s("search for TODO").as_deref(), Some("TODO"));
+        // Multi-word subjects are ambiguous: ask instead of guessing a pattern.
+        assert_eq!(s("find all references to user authentication"), None);
+        assert_eq!(s("run the project tests"), None);
+        assert_eq!(s("find stuff"), None);
+    }
+}
+
+#[cfg(test)]
+mod subject_more {
+    use super::search_subject as s;
+    #[test]
+    fn tool_named_after_the_subject() {
+        assert_eq!(
+            s("find all references to authentication using rg").as_deref(),
+            Some("authentication")
+        );
+        assert_eq!(
+            s("find all references to authentication with ripgrep").as_deref(),
+            Some("authentication")
+        );
     }
 }

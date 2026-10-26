@@ -701,6 +701,11 @@ fn end_to_end_unfamiliar_executable() {
     // 1. An executable cli2 has never seen.
     let tool = env.bin.join("mkreport");
     std::fs::copy(fixture("tools/mkreport"), &tool).unwrap();
+    // Unrelated look-alikes, supplied by the test rather than by whatever the
+    // host happens to have installed (the PATH in `Env` is hermetic).
+    for decoy in ["report-viewer", "summary-writer"] {
+        write_executable(&env.bin.join(decoy), "#!/bin/sh\necho decoy\n");
+    }
 
     // 2–3. Scan discovers it and the project's tasks, with no custom definition.
     let (_, scan) = env.json(&proj, &["scan"]);

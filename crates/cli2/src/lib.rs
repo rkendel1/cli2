@@ -6,6 +6,6 @@ pub mod render;
 pub mod semantic;
 
 pub use engine::{
-    digest_matches, ApprovalAnswer, Config, Engine, EngineError, Interaction, NonInteractive,
-    RunOptions, ScanReport, SemanticEvent, DEFAULT_TIMEOUT_SECS,
+    digest_matches, ApprovalAnswer, CaptureNote, Config, Engine, EngineError, Interaction,
+    NonInteractive, RunOptions, ScanReport, SemanticEvent, DEFAULT_TIMEOUT_SECS,
 };

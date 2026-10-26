@@ -7,7 +7,9 @@ use std::time::Instant;
 
 use serde::Serialize;
 
-use super::bridge::{BridgeCandidate, BridgeClient, BridgeConstraints, BridgeError, BridgeRequest, REQUEST_SCHEMA};
+use super::bridge::{
+    BridgeCandidate, BridgeClient, BridgeConstraints, BridgeError, BridgeRequest, REQUEST_SCHEMA,
+};
 use super::validate::validate_ranking;
 use super::{ResolverSettings, PROVIDER_ID};
 
@@ -72,7 +74,13 @@ fn remedy_for(state: &str) -> Option<&'static str> {
     })
 }
 
-fn make_status(state: &str, bridge: BridgeInfo, model: ModelInfo, local: bool, error: Option<ErrorInfo>) -> ModelStatus {
+fn make_status(
+    state: &str,
+    bridge: BridgeInfo,
+    model: ModelInfo,
+    local: bool,
+    error: Option<ErrorInfo>,
+) -> ModelStatus {
     ModelStatus {
         schema_version: STATUS_SCHEMA,
         provider: PROVIDER_ID,
@@ -96,26 +104,45 @@ fn error_state(e: &BridgeError) -> &'static str {
 }
 
 pub fn model_status(settings: &ResolverSettings) -> ModelStatus {
-    let no_model = ModelInfo { ready: false, availability: None, availability_detail: None };
+    let no_model = ModelInfo {
+        ready: false,
+        availability: None,
+        availability_detail: None,
+    };
     if !cfg!(target_os = "macos") {
         return make_status(
             "unsupported_platform",
-            BridgeInfo { status: "not_applicable", path: None, version: None },
+            BridgeInfo {
+                status: "not_applicable",
+                path: None,
+                version: None,
+            },
             no_model,
             false,
             None,
         );
     }
-    let client = BridgeClient::new(settings.bridge_path.clone(), settings.timeout_secs, settings.max_response_bytes);
+    let client = BridgeClient::new(
+        settings.bridge_path.clone(),
+        settings.timeout_secs,
+        settings.max_response_bytes,
+    );
     let path = match client.locate() {
         Ok(p) => p,
         Err(e) => {
             return make_status(
                 "bridge_missing",
-                BridgeInfo { status: "missing", path: None, version: None },
+                BridgeInfo {
+                    status: "missing",
+                    path: None,
+                    version: None,
+                },
                 no_model,
                 false,
-                Some(ErrorInfo { code: e.code().into(), message: e.to_string() }),
+                Some(ErrorInfo {
+                    code: e.code().into(),
+                    message: e.to_string(),
+                }),
             )
         }
     };
@@ -127,25 +154,42 @@ pub fn model_status(settings: &ResolverSettings) -> ModelStatus {
             make_status(
                 state,
                 BridgeInfo {
-                    status: if state == "bridge_launch_failed" { "launch_failed" } else { "failed" },
+                    status: if state == "bridge_launch_failed" {
+                        "launch_failed"
+                    } else {
+                        "failed"
+                    },
                     path: path_s,
                     version: None,
                 },
                 no_model,
                 false,
-                Some(ErrorInfo { code: e.code().into(), message: e.to_string() }),
+                Some(ErrorInfo {
+                    code: e.code().into(),
+                    message: e.to_string(),
+                }),
             )
         }
         Ok(resp) => {
-            let bridge = BridgeInfo { status: "ok", path: path_s, version: resp.bridge_version.clone() };
-            let local = resp.model.as_ref().is_some_and(|m| m.local && m.provider == PROVIDER_ID);
+            let bridge = BridgeInfo {
+                status: "ok",
+                path: path_s,
+                version: resp.bridge_version.clone(),
+            };
+            let local = resp
+                .model
+                .as_ref()
+                .is_some_and(|m| m.local && m.provider == PROVIDER_ID);
             if resp.schema_version != super::bridge::RESPONSE_SCHEMA || resp.request_id != id {
                 return make_status(
                     "inference_failed",
                     bridge,
                     no_model,
                     false,
-                    Some(ErrorInfo { code: "invalid_response".into(), message: "the bridge's status response did not match the contract".into() }),
+                    Some(ErrorInfo {
+                        code: "invalid_response".into(),
+                        message: "the bridge's status response did not match the contract".into(),
+                    }),
                 );
             }
             let Some(av) = resp.availability.clone() else {
@@ -154,7 +198,10 @@ pub fn model_status(settings: &ResolverSettings) -> ModelStatus {
                     bridge,
                     no_model,
                     false,
-                    Some(ErrorInfo { code: "invalid_response".into(), message: "the status response carried no availability".into() }),
+                    Some(ErrorInfo {
+                        code: "invalid_response".into(),
+                        message: "the status response carried no availability".into(),
+                    }),
                 );
             };
             let state = match av.state.as_str() {
@@ -212,7 +259,10 @@ pub fn model_test(settings: &ResolverSettings) -> ModelTest {
     let status = model_status(settings);
     if !status.ready {
         out.state = status.state;
-        out.error = status.error.or(Some(ErrorInfo { code: "model_unavailable".into(), message: "the model is not ready".into() }));
+        out.error = status.error.or(Some(ErrorInfo {
+            code: "model_unavailable".into(),
+            message: "the model is not ready".into(),
+        }));
         return out;
     }
     let cand = |id: &str, name: &str, purpose: &str| BridgeCandidate {
@@ -230,19 +280,33 @@ pub fn model_test(settings: &ResolverSettings) -> ModelTest {
         request_id: id.clone(),
         operation: "rank",
         intent: Some("search a folder of documents for a word".into()),
-        constraints: Some(BridgeConstraints { modify_files: Some(false), network: "unknown".into() }),
+        constraints: Some(BridgeConstraints {
+            modify_files: Some(false),
+            network: "unknown".into(),
+        }),
         candidates: vec![
             cand("smoke:calendar", "calendar", "Print a calendar for a month"),
-            cand("smoke:search", "textsearch", "Search files for matching text"),
+            cand(
+                "smoke:search",
+                "textsearch",
+                "Search files for matching text",
+            ),
             cand("smoke:archive", "archiver", "Create compressed archives"),
         ],
     };
     let submitted: Vec<String> = req.candidates.iter().map(|c| c.id.clone()).collect();
-    let client = BridgeClient::new(settings.bridge_path.clone(), settings.timeout_secs, settings.max_response_bytes);
+    let client = BridgeClient::new(
+        settings.bridge_path.clone(),
+        settings.timeout_secs,
+        settings.max_response_bytes,
+    );
     match client.call(&req) {
         Err(e) => {
             out.state = error_state(&e).into();
-            out.error = Some(ErrorInfo { code: e.code().into(), message: e.to_string() });
+            out.error = Some(ErrorInfo {
+                code: e.code().into(),
+                message: e.to_string(),
+            });
         }
         Ok(resp) => match validate_ranking(&resp, &id, &submitted) {
             Ok(v) => {
@@ -250,11 +314,15 @@ pub fn model_test(settings: &ResolverSettings) -> ModelTest {
                 out.state = "ready".into();
                 out.outcome = Some(v.outcome.as_str().into());
                 out.top_choice = v.rankings.first().map(|r| r.capability_id.clone());
-                out.top_choice_as_expected = Some(out.top_choice.as_deref() == Some("smoke:search"));
+                out.top_choice_as_expected =
+                    Some(out.top_choice.as_deref() == Some("smoke:search"));
             }
             Err(e) => {
                 out.state = "inference_failed".into();
-                out.error = Some(ErrorInfo { code: "invalid_response".into(), message: e.to_string() });
+                out.error = Some(ErrorInfo {
+                    code: "invalid_response".into(),
+                    message: e.to_string(),
+                });
             }
         },
     }

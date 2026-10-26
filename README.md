@@ -457,6 +457,102 @@ The model is small and non-deterministic across runs, and with 12 cases these
 figures are indicative only. Safety properties (validation, policy gating) do
 not depend on its accuracy.
 
-Note: `end_to_end_unfamiliar_executable` in the first-slice acceptance tests
-fails on this Mac both before and after this change (macOS ships `/usr/bin/write`,
-which outranks the `mkreport` fixture).
+## Interface discovery (slice 3)
+
+A capability becomes *plannable* when cli2 has enough **verified** information
+to build a valid invocation, not because its name matches the request.
+
+```sh
+cli2 describe executable:rg --capture-help      # run `rg --help` once (bounded), record the interface
+cli2 describe executable:rg                     # usage, options, provenance, uncertainty
+cli2 "find all references to authentication" --capture-help
+```
+
+`--capture-help` is your consent to run `<exe> --help` for up to three offered
+executables whose interface is unknown. Help output is untrusted text: it is
+sanitized (terminal escapes and control characters removed) and parsed, never
+executed or obeyed. Capture is bounded (5 s, 64 KiB, in cli2's own data
+directory rather than your project) and only `--help` is attempted.
+
+**What is recorded** on the capability itself (the SQLite index; there is no
+second registry): the usage line, positional parameters (required/optional/
+variadic), recognized options with aliases and whether they take a value, the
+help excerpt and a reference to the full output in evidence, how it was
+obtained, when, the executable's path and fingerprint, the parser version, and
+a list of *uncertainties* (e.g. "7 further usage forms were not interpreted").
+
+**Four levels of knowledge**, and what the planner does with each:
+
+| Interface | Meaning | Planner |
+|---|---|---|
+| `unknown` | Name and location only (or a capture failed) | Not plannable; says what is missing |
+| `partial` | Some options/positionals recognized, usage form not understood | Not plannable; says what was understood |
+| `inferred` | Primary usage line fully understood from help | Plannable when the request supplies the inputs |
+| `declared` / `observed` | Manifest/user-declared or executed and observed | Plannable |
+
+The parser is deliberately conservative: bare lowercase words (possible
+subcommands), `{a|b}` alternatives and required options in a usage line leave
+the interface `partial`; only the first of several usage forms is used and the
+rest are counted; unrecognized syntax is never taken as "no arguments". The
+planner never adds an option the request did not call for: recognized options
+are information, not permission. Positional values come from your explicit
+inputs, quoted values, `--arg NAME=VALUE`, or, for a search term, a subject the
+request states unambiguously ("references to X", "usages of X", "where X is
+used", "files named X", "search for X"). A multi-word or murky subject is
+asked about, not guessed. An optional *path* positional is omitted only when
+the tool's own help says what omission means (e.g. "searches the current
+directory"); otherwise cli2 asks for it.
+
+**Lifecycle.** A valid capture is reused with no process run. A capture made by
+an older parser is re-parsed from its stored output. A failed capture
+(timeout, no usable help, abnormal exit) is recorded and *not* retried
+automatically (`--refresh-help` forces a new attempt) and leaves the interface
+unknown. If the executable on disk no longer matches the fingerprint it was
+captured from, the interface is not used (reported in the plan's limitations)
+and `cli2 scan` discards it. Ordinary requests do one `stat` per captured
+executable; they never rescan.
+
+**A valid interface is not a safe command.** Capturing an interface never
+touches effects: a tool with unknown effects still needs approval, and its
+plan says so.
+
+### The search workflow
+
+```sh
+cd your/project
+cli2 describe executable:rg --capture-help          # once; later requests reuse it
+cli2 "find all references to authentication"       # shows: rg authentication
+cli2 "find all references to authentication" --yes # approve, run, verify
+```
+
+The plan shows the exact argv, effects (unknown, so confirmation is required),
+and a task-level check that the output mentions the search term; exit status
+alone is never treated as success, and a search that matches nothing (exit 1)
+is reported as a failure, not as success. Evidence records `help_captured`,
+`interface_provenance` (which capture the invocation was built from) and the
+usual plan/execution/verification chain. With `--resolver apple-fm` the model
+may choose among capabilities, but interface knowledge and argument
+construction stay deterministic. If it picks a tool whose interface is not
+sufficient (e.g. BSD `grep` documents `[file ...]` but not what happens without
+one; `find`'s usage is only partly understood), cli2 reports exactly what is
+missing instead of fabricating arguments. A tool can only be chosen once it is
+retrievable: name it in the request or capture it once.
+
+### Tests and baselines
+
+`end_to_end_unfamiliar_executable` used to fail on macOS because the host's
+`/usr/bin/write` outranked the `mkreport` fixture. The acceptance harness now
+builds a hermetic `PATH` (a private bin directory with symlinks to a short list
+of tools the fixtures need) and the test supplies its own decoys, so it
+validates the intended executable regardless of what else is installed;
+candidate selection was not changed. At the pre-fix commit `c7a3b54` that test
+fails; on this branch the acceptance suite passes (23/23), as does the rest of
+the Rust suite (93 tests, including real-`rg` scenarios that skip when `rg` is
+absent), `cargo clippy -D warnings`, and the 6 Swift tests.
+
+The 12-case semantic benchmark was re-run unchanged: top-1 38% (deterministic)
+vs 62% (Apple) before and after, ranking pass 67% before and after, 0% invalid
+references/plans. Interface discovery does not change ranking, and the cases do
+not use `--capture-help`, so they do not measure this slice; its effect is
+that more requests become plannable (see the tests). Saved runs are in
+`evals/results/`.

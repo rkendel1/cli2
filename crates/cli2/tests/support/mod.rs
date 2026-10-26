@@ -52,6 +52,15 @@ pub fn write_executable(path: &Path, body: &str) {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
+/// Host executables the fixture projects and tests rely on, and nothing else.
+pub const HOST_TOOLS: &[&str] = &[
+    "sh", "env", "node", "npm", "npx", "make", "cargo", "rustc", "rustup", "mkdir", "rm", "cp",
+    "mv", "sleep", "cat", "touch", "ls", "dirname", "basename", "uname", "true", "false", "sudo",
+    "printf", "sed", "tr", "head", "tail", "wc", "sort", "test", "echo",
+    // C toolchain for linking Rust fixtures.
+    "cc", "clang", "ld", "ar", "xcrun", "dsymutil", "strip", "lipo", "gcc",
+];
+
 pub struct Env {
     _tmp: tempfile::TempDir,
     pub home: PathBuf,
@@ -89,28 +98,27 @@ impl Env {
         for d in [&home, &bin, &work] {
             std::fs::create_dir_all(d).unwrap();
         }
-        let mut dirs = vec![bin.clone()];
-        for tool in ["node", "npm", "make", "cargo", "sh"] {
+        // Hermetic PATH: only the private bin directory, populated with
+        // symlinks to the specific tools the fixtures need. The tests must not
+        // depend on (or be disturbed by) whatever else the host has installed:
+        // e.g. macOS ships `/usr/bin/write`, which is a perfectly good match
+        // for "write a summary report" and has nothing to do with `mkreport`.
+        for tool in HOST_TOOLS {
             if let Some(p) = which(tool) {
-                let d = p.parent().unwrap().to_path_buf();
-                if !dirs.contains(&d) {
-                    dirs.push(d);
+                let link = bin.join(tool);
+                if !link.exists() {
+                    let _ = std::os::unix::fs::symlink(&p, &link);
                 }
             }
         }
-        // The cargo running these tests, even if it is not on PATH.
         if let Some(c) = std::env::var_os("CARGO") {
-            let d = PathBuf::from(c).parent().unwrap().to_path_buf();
-            if !dirs.contains(&d) {
-                dirs.push(d);
+            let c = PathBuf::from(c);
+            let link = bin.join("cargo");
+            if c.is_file() && !link.exists() {
+                let _ = std::os::unix::fs::symlink(&c, &link);
             }
         }
-        for d in ["/usr/bin", "/bin"] {
-            let d = PathBuf::from(d);
-            if !dirs.contains(&d) {
-                dirs.push(d);
-            }
-        }
+        let dirs = vec![bin.clone()];
         let path = std::env::join_paths(dirs).unwrap();
         Env {
             _tmp: tmp,
