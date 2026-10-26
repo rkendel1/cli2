@@ -1,0 +1,363 @@
+# CLI 2.0 — first slice
+
+`cli2` turns a human's or an agent's intent into a real, authorized, verifiable
+operation, using only capabilities it has **discovered** in the current
+environment.
+
+```text
+cli2 "run the project tests"
+```
+
+discovers the available executables and project tasks, ranks the candidates,
+previews the exact invocation, obtains approval when policy requires it,
+executes a real process, verifies what it can, and records evidence of what
+actually happened. It is not an AI shell and not a lookup table: it works
+without any model, never invents commands or flags, and never reports a zero
+exit status as verified task success.
+
+```
+intent ──► discovery & index ──► resolution & planning ──► authority & execution ──► verification & evidence
+ (CLI / JSON)   (PATH, manifests,     (rank, bind inputs,      (policy, preview,          (observed results,
+                 SQLite, provenance)   effects, checks)          approval, subprocess)      postconditions, journal)
+```
+
+## Install
+
+Requires a stable Rust toolchain (1.82+).
+
+```sh
+git clone https://github.com/rkendel1/cli2 && cd cli2
+cargo install --path crates/cli2      # installs the `cli2` binary
+cli2 --help
+```
+
+## Quick start
+
+```sh
+cd some/project
+cli2 scan                               # discover PATH executables + project tasks
+cli2 inventory                          # what was found, with knowledge state and effects
+cli2 plan "run the project tests"       # resolve and preview only
+cli2 "run the project tests"            # preview, approve, execute, verify
+cli2 task show req_…                    # inspect request, plan, approval, result, events
+```
+
+In a terminal, `cli2` shows the preview and asks before running anything that
+needs approval. Non-interactive callers (pipes, agents, `--json`) are never
+prompted: a plan that needs approval comes back as `awaiting_approval` with the
+plan ID and digest needed to approve it explicitly.
+
+### Example: an executable cli2 has never seen
+
+```sh
+$ cli2 scan
+$ cli2 "write a summary report to out/report.txt"
+? No discovered capability clearly matches … learning more about them may help:
+  `cli2 describe executable:mkreport --capture-help` …
+$ cli2 "write a summary report to out/report.txt" --capture-help
+Proposed action: write a summary report to out/report.txt
+  Capability    executable:mkreport
+  Command       mkreport out/report.txt
+  Effects       unknown  [not characterized]
+  Approval      confirmation required (--yes accepted)
+  Verification  - process exits with status 0 [process-level, runtime]
+                - file out/report.txt exists and was written during execution [task-level, interface:output_parameter:output]
+  Plan          plan_…  digest de0320fd3e8c
+? Awaiting approval (confirm) … run `cli2 exec plan_… --approve de0320fd3e8c` (or re-run with --yes).
+$ cli2 exec plan_… --approve de0320fd3e8c
+✔ Succeeded: the process completed and task-level verification passed.
+```
+
+Nothing about `mkreport` is hard-coded: it was found on `PATH`, its interface
+was learned from its own `--help` output (only because `--capture-help` asked
+for that), its output parameter produced a task-level postcondition, and its
+unknown effects meant it could not run without approval.
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `cli2 scan [--rebuild]` | Discover or reconcile environment and project capabilities. `--rebuild` moves a corrupt index aside and rebuilds it. |
+| `cli2 inventory [--kind executable\|project_task] [--filter TEXT]` | Display indexed capabilities. |
+| `cli2 "intent"` | Resolve, preview, obtain approval, execute, and verify. |
+| `cli2 plan "intent"` | Resolve and display a plan without executing it. |
+| `cli2 exec PLAN_ID [--yes] [--approve DIGEST]` | Execute a recorded plan (re-checked for staleness first). |
+| `cli2 describe ID [--capture-help]` | Show what is known about a capability; optionally run its `--help` (bounded) and record what it reveals. |
+| `cli2 characterize ID --effects a,b [--purpose TEXT]` | Declare a capability's effects. Bound to the current fingerprint. |
+| `cli2 task show ID` / `cli2 task list` | Inspect recorded requests, plans, approvals, results, and the event journal. |
+| `cli2 evidence REF` | Print a captured output blob (`evidence:sha256:…`). |
+| `cli2 schema [NAME]` | Print the published JSON Schemas. |
+
+An intent whose first word is a command name (e.g. `plan`) is read as that
+command; quote the whole intent or use `cli2 plan "…"` / `--no-exec` explicitly.
+
+### Flags
+
+| Flag | Meaning |
+|---|---|
+| `--json` | Machine-readable output (global). Implies non-interactive. |
+| `--cwd PATH` | Act in this working directory (global). |
+| `--no-exec` | Resolve and preview only. |
+| `--yes`, `-y` | Approve plans whose policy allows non-interactive *confirmation*. Never approves high-impact or forbidden operations. |
+| `--approve DIGEST` | Explicitly approve the plan with this digest (full, or the 12-character prefix shown in previews). |
+| `--timeout SECONDS` | Bound each process (default 600). |
+| `--pick CAPABILITY_ID` | Answer an ambiguity question by choosing a capability. |
+| `--arg NAME=VALUE` | Bind an interface parameter. |
+| `--expect-file PATH`, `--expect-stdout TEXT` | Add task-level postconditions. |
+| `--no-modify`, `--allow-modify`, `--no-network` | Request constraints. |
+| `--request FILE` | Read a `cli2.request.v1` JSON request (`-` for stdin). |
+| `--capture-help` | Allow running `--help` of the best uncharacterized executable match. |
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | `succeeded`, `planned`, or a non-intent command completed |
+| 1 | `failed` (including timeouts and processes that could not start) |
+| 2 | Invalid usage, invalid request, or unknown ID |
+| 3 | `awaiting_approval` |
+| 4 | `needs_clarification` |
+| 5 | `verification_failed` |
+| 6 | `rejected` (constraints, policy, or a stale/modified plan) |
+| 7 | `cancelled` |
+| 8 | `partially_succeeded` |
+| 9 | The capability index is corrupt (`cli2 scan --rebuild`) |
+| 10 | Internal error |
+
+With `--json`, errors are printed as `{"schema_version":"cli2.error.v1","error":{"code","message","remedy"}}`.
+
+## Machine interface
+
+Agents should use `--json` (or `--request` with a JSON file) and never parse the
+human output. Contracts are versioned and published as JSON Schemas generated
+from the Rust types in `cli2-core`:
+
+| Schema | Used for |
+|---|---|
+| [`schemas/v1/request.schema.json`](schemas/v1/request.schema.json) | `cli2.request.v1` — intent, constraints, context, optional `selection`, `bindings`, `expectations` |
+| [`schemas/v1/capability.schema.json`](schemas/v1/capability.schema.json) | `cli2.capability.v1` — indexed capability with provenance |
+| [`schemas/v1/plan.schema.json`](schemas/v1/plan.schema.json) | `cli2.plan.v1` — candidates, steps (executable + argv), effects, approval, verification, digest |
+| [`schemas/v1/result.schema.json`](schemas/v1/result.schema.json) | `cli2.result.v1` — every intent/plan/exec output |
+| [`schemas/v1/approval.schema.json`](schemas/v1/approval.schema.json) | `cli2.approval.v1` — approval decisions bound to plan ID + digest |
+
+```json
+{
+  "schema_version": "cli2.request.v1",
+  "intent": "Run the project tests",
+  "constraints": { "modify_files": false, "network": "unknown" },
+  "context": { "working_directory": "." }
+}
+```
+
+Unspecified constraints are recorded as absent, never as permission. Caller
+identity is established by the runtime (local process, uid, interactive or not)
+and cannot be supplied in the request. IDs and evidence references are generated
+by the runtime.
+
+Result statuses: `succeeded`, `failed`, `partially_succeeded`,
+`awaiting_approval`, `needs_clarification`, `cancelled`, `verification_failed`,
+plus `rejected` (constraint/policy violation) and `planned` (plan-only).
+`process_status` and `verification` are reported separately from `status`.
+
+Regenerate the schemas after changing a contract type:
+
+```sh
+UPDATE_SCHEMAS=1 cargo test -p cli2 --test contracts
+```
+
+## Discovery and the index
+
+* **PATH**: every executable file in each absolute `PATH` directory, first match
+  wins, later same-named files recorded as `shadows`. Fingerprint = size, mtime,
+  inode and mode (contents are not hashed, to keep scans fast). Relative `PATH`
+  entries are skipped.
+* **Project manifests** (nearest ancestor directory containing one):
+  `package.json` scripts (including the `pre`/`post` hooks npm runs), Makefile
+  targets (not special, pattern, or variable lines), `Cargo.toml` (build, test,
+  check, run), and `justfile` recipes with their parameters. Each task's
+  fingerprint covers its own definition, so editing one script invalidates only
+  that task.
+* **Shell context**: the active shell and working directory are recorded with
+  each scan. Shell built-ins are not indexed, because an executable + argv
+  invocation cannot represent their context.
+* **Help**: captured only on demand (`describe --capture-help` or
+  `--capture-help`), bounded to 5 s and 64 KiB. Discovery itself never executes
+  anything. Only conventional usage lines are parsed; anything else leaves the
+  interface unknown.
+* **History**: successful executions slightly improve ranking and mark a
+  capability `observed` for the fingerprint that ran — never as proof of current
+  behavior.
+
+Knowledge states (`discovered` → `described` → `characterized` → `observed`)
+are not safety ratings.
+
+The index is SQLite at `$CLI2_HOME/index.db` (default: `$XDG_DATA_HOME/cli2`,
+else `~/.local/share/cli2`). It survives restarts and is reconciled per scope
+(the environment, and each project root): new capabilities are added, changed
+fingerprints replace the record and **discard enrichments bound to the old
+fingerprint** (captured help, user characterizations), and vanished ones are
+removed. Every intent cheaply re-hashes the current project's manifests and
+reconciles them if they changed; the environment is scanned automatically only
+if it never was. Every record carries a SHA-256 checksum verified on open, along
+with SQLite's `quick_check` and the index version: corrupt state is reported
+(exit 9), never used, and `cli2 scan --rebuild` moves the bad file aside and
+rebuilds. Evidence lives separately (`$CLI2_HOME/evidence/`), so rebuilding the
+index never loses evidence.
+
+## Resolution
+
+1. **Deterministic match** — the intent is a capability ID or exactly a known
+   invocation (`npm run lint`, `make test`), or the caller picked one.
+2. **Retrieval** — lexical scoring over names, descriptions and captured help,
+   with light stemming, stop words and a small documented synonym table
+   (`crates/cli2-resolver/src/terms.rs`).
+3. **Ranking** — fully matched names score highest (more specific names
+   higher); tasks of the current project get a locality bonus; naming the
+   runner (`with make`) disambiguates; descriptions only count on their own if
+   they cover at least half of the intent.
+4. **Plan construction** — only from known interfaces. Values are bound to
+   documented positional parameters from `--arg` or from quoted / path-like
+   values in the intent. Values that look like flags are refused. An executable
+   whose interface is unknown is not plannable.
+5. **Ambiguity** — viable candidates within 1.0 of the best that would run
+   something different produce `needs_clarification` with the options; a best
+   match that cannot be planned is reported rather than silently replaced by a
+   worse one.
+6. **Policy validation** — see below.
+
+An optional semantic ranker can be plugged in through the
+`cli2_resolver::SemanticRanker` trait (`Engine::set_ranker`). It may only
+re-score the candidates it is given; it cannot add candidates, change
+viability, construct invocations, or influence approval. The default is no
+inference at all.
+
+## Authority defaults
+
+Effects are assessed with provenance: `unknown`, `heuristic` (from names and
+script bodies), or `declared` (by `cli2 characterize`, bound to the fingerprint).
+
+| Situation | Approval level | How it can be approved |
+|---|---|---|
+| Declared read-only | `none` | Runs under the default local policy |
+| Declared file modification with `--allow-modify` | `none` | The request constraint is the permission |
+| Unknown effects, heuristic read-only, or possible file modification | `confirm` | Interactive `y`, `--yes`, or `--approve DIGEST` |
+| Possible deletion, network/external communication, publishing, deployment | `explicit` | Interactive `yes`, or `--approve DIGEST` — **not** `--yes` |
+| Privilege escalation (`sudo`, `doas`, …) | `forbidden` | Cannot be approved |
+
+* Unknown effects are never treated as read-only.
+* Approvals are records bound to a plan ID **and** its SHA-256 digest (which
+  covers the steps, argv, executable fingerprints, constraints, effects,
+  approval level and checks). Changing the plan invalidates the approval.
+* Before executing, the runtime re-fingerprints every executable and project
+  task the plan references; a stale plan is rejected and must be re-planned and
+  re-approved.
+* Constraints (`--no-modify`, `--no-network`, or the request JSON) reject plans
+  whose effects violate them **or cannot be shown to comply** (unknown effects).
+* All of this is enforced by runtime code (`cli2-execution::policy`), never by
+  a model.
+* Policy can be tightened with `$CLI2_HOME/policy.json`:
+  `{"deny_effects": ["privilege_escalation", "deploys"], "yes_approves_unknown_effects": false}`.
+
+## Execution, verification and evidence
+
+Processes are started from an absolute executable path and argument vector
+(never a shell string), with stdin closed, in their own process group, with a
+timeout (SIGTERM, then SIGKILL after 2 s, to the whole group) and Ctrl-C
+cancellation. stdout/stderr are captured up to 8 MiB each and stored
+content-addressed as evidence.
+
+Verification is deterministic and separate from process status:
+
+* `process_exit_status` is process-level evidence only.
+* Task-level checks come from capability metadata (e.g. `cargo build` →
+  `target/` exists), from output parameters (`<OUTPUT>` → file written during
+  execution), and from caller expectations (`--expect-file`, `--expect-stdout`).
+* `verification.status` is `passed` only when task-level checks ran and passed;
+  `unverified` when only the exit status could be checked (the result still
+  says `succeeded`, with a limitation); `failed` → `verification_failed`.
+
+The evidence journal (`$CLI2_HOME/evidence/journal.db`) records requests,
+plans, approval decisions, step start/finish with exact invocations,
+timestamps, exit codes, signals and output references, verification results,
+and final results — for failed, rejected, cancelled and clarification outcomes
+too. Events form a SHA-256 hash chain; `cli2 task show` reports whether it
+verifies.
+
+## Limitations
+
+* **Not a sandbox.** Processes run with your user's permissions and
+  environment. Authority enforcement decides *whether* something runs, not what
+  it can touch once running.
+* Effect assessment is heuristic unless declared; heuristics can be wrong in
+  both directions (which is why heuristic results never skip approval).
+* Ranking is lexical. It handles the deterministic cases in
+  `evals/first-slice.jsonl`; it does not understand arbitrary tools.
+* Help parsing understands conventional `Usage:` lines only; subcommand-style
+  interfaces are left unknown. Only positional parameters are bound; cli2 never
+  adds flags.
+* Plans are single-step in practice (the contracts support ordered steps).
+* Output is shown after the process finishes, not streamed.
+* Executable fingerprints use file metadata, not content hashes.
+* Unix only (process groups and signals).
+
+## Workspace layout
+
+```text
+crates/
+  cli2/             CLI entry point, human rendering, and orchestration (Engine)
+  cli2-core/        Contracts: requests, capabilities, plans, results, approvals; schema generation
+  cli2-discovery/   PATH and project manifest discovery, help parsing, effect heuristics
+  cli2-index/       SQLite persistence, reconciliation, integrity checks
+  cli2-resolver/    Retrieval, ranking, ambiguity handling, plan construction
+  cli2-execution/   Policy assessment, approval enforcement, bounded subprocesses
+  cli2-evidence/    Hash-chained journal, evidence blobs, postcondition verification
+schemas/v1/         Generated JSON Schemas
+fixtures/           node-project, make-project, rust-project, tools/mkreport
+evals/              first-slice.jsonl (intent → expected resolution)
+```
+
+Orchestration lives in the `cli2` crate rather than `cli2-core`, so that the
+contracts crate has no dependency on the stage crates that use it.
+
+## Acceptance tests
+
+Every acceptance test runs the real `cli2` binary against a fixture project
+copied into a temporary directory, with an isolated `CLI2_HOME` and a
+controlled `PATH`, executing real subprocesses (no mocked execution).
+
+```sh
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+Node.js/npm and make are needed for the tests that execute those fixtures
+(tests print `SKIPPED` if a tool is missing); the Rust fixture uses the cargo
+running the tests.
+
+| Spec behavior | Test (`crates/cli2/tests/`) |
+|---|---|
+| Discover a known executable | `acceptance::discover_a_known_executable` |
+| Discover a Node project | `acceptance::discover_a_node_project` (+ `discover_make_and_cargo_projects`) |
+| Discover a new executable | `acceptance::discover_a_new_executable_on_rescan` |
+| Change a project manifest | `acceptance::changed_project_manifest_is_invalidated_and_reconciled` |
+| Resolve a clear intent | `acceptance::resolve_a_clear_intent` |
+| Resolve an ambiguous intent | `acceptance::resolve_an_ambiguous_intent` |
+| Plan-only request | `acceptance::plan_only_request_does_not_execute` |
+| Unapproved risky operation | `acceptance::unapproved_risky_operation_is_blocked`, `hard_restrictions_cannot_be_approved`, `constraints_reject_noncompliant_plans` |
+| Modify the plan after approval | `acceptance::modified_plan_cannot_use_old_approval` (+ `cli2-execution` policy unit tests) |
+| Run a successful process | `acceptance::run_a_successful_process` |
+| Run a failing process | `acceptance::run_a_failing_process` |
+| Verify a task postcondition | `acceptance::verify_a_task_postcondition`, `manifest_derived_postcondition_for_cargo_build` |
+| Request JSON output | `acceptance::json_output_conforms_to_contracts`, `contracts::*` |
+| Corrupt the index | `acceptance::corrupt_index_is_reported_and_rebuilt` |
+| Run with no inference provider | `acceptance::deterministic_resolution_without_inference`, `engine::*` |
+| Cancel or time out a process | `acceptance::cancellation_is_recorded`, `timeout_is_recorded` |
+| End-to-end demonstration (§12) | `acceptance::end_to_end_unfamiliar_executable` |
+| Resolution evals | `evals::first_slice_evals` (`evals/first-slice.jsonl`) |
+
+Run one area, e.g. the end-to-end demonstration, with:
+
+```sh
+cargo test -p cli2 --test acceptance end_to_end -- --nocapture
+```

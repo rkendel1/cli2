@@ -1,0 +1,14 @@
+{"id": "npm-run-tests", "fixture": "node-project", "intent": "run the project tests", "requires": ["npm"], "expect": {"status": "planned", "capability_id": "project-script:npm:test", "approval": "confirm"}}
+{"id": "npm-run-tests-synonym", "fixture": "node-project", "intent": "execute the specs", "requires": ["npm"], "expect": {"status": "planned", "capability_id": "project-script:npm:test"}}
+{"id": "npm-exact-invocation", "fixture": "node-project", "intent": "npm run lint", "requires": ["npm"], "expect": {"status": "planned", "capability_id": "project-script:npm:lint"}}
+{"id": "npm-compile-synonym", "fixture": "node-project", "intent": "compile the project", "requires": ["npm"], "expect": {"status": "planned", "capability_id": "project-script:npm:build", "approval": "confirm"}}
+{"id": "npm-publish-explicit", "fixture": "node-project", "intent": "publish the package", "requires": ["npm"], "expect": {"status": "planned", "capability_id": "project-script:npm:publish-package", "approval": "explicit"}}
+{"id": "npm-specific-name-wins", "fixture": "node-project", "intent": "run the failing tests", "requires": ["npm"], "expect": {"status": "planned", "capability_id": "project-script:npm:test:fail"}}
+{"id": "npm-no-modify-rejects-build", "fixture": "node-project", "intent": "build the bundle", "args": ["--no-modify"], "requires": ["npm"], "expect": {"status": "rejected"}}
+{"id": "npm-unrelated-intent", "fixture": "node-project", "intent": "order a pizza with extra cheese", "requires": ["npm"], "expect": {"status": "needs_clarification"}}
+{"id": "make-build", "fixture": "make-project", "intent": "build the artifact", "requires": ["make"], "expect": {"status": "planned", "capability_id": "project-task:make:build"}}
+{"id": "make-description-match", "fixture": "make-project", "intent": "run the checks", "requires": ["make"], "expect": {"status": "planned", "capability_id": "project-task:make:test"}}
+{"id": "make-clean-deletes", "fixture": "make-project", "intent": "clean up the build output", "requires": ["make"], "expect": {"status": "planned", "capability_id": "project-task:make:clean", "approval": "explicit"}}
+{"id": "make-privilege-forbidden", "fixture": "make-project", "intent": "install-system", "requires": ["make"], "expect": {"status": "rejected", "capability_id": "project-task:make:install-system", "approval": "forbidden"}}
+{"id": "cargo-build", "fixture": "rust-project", "intent": "build the crate", "requires": ["cargo"], "expect": {"status": "planned", "capability_id": "project-task:cargo:build"}}
+{"id": "cargo-typecheck", "fixture": "rust-project", "intent": "typecheck the code", "requires": ["cargo"], "expect": {"status": "planned", "capability_id": "project-task:cargo:check"}}

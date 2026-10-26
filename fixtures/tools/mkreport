@@ -1,0 +1,32 @@
+#!/bin/sh
+# mkreport: a small tool CLI 2.0 has never seen before. It is deliberately
+# not special-cased anywhere in cli2; tests put it on PATH and let discovery
+# and help capture find out what it does.
+set -eu
+usage() {
+  cat <<'HELP'
+Write a summary report of a directory's files
+
+Usage: mkreport <OUTPUT> [SOURCE]
+
+Arguments:
+  <OUTPUT>  File to write the report to (parent directories are created)
+  [SOURCE]  Directory to summarize (default: current directory)
+
+Options:
+  -h, --help  Print help
+HELP
+}
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  "") usage >&2; exit 2 ;;
+esac
+out="$1"
+src="${2:-.}"
+mkdir -p "$(dirname "$out")"
+count=$(find "$src" -type f | wc -l | tr -d ' ')
+{
+  echo "# Report for $src"
+  echo "files: $count"
+} > "$out"
+echo "wrote $out ($count files)"

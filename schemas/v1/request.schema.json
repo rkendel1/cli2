@@ -1,0 +1,185 @@
+{
+  "$defs": {
+    "Check": {
+      "description": "A deterministic check evaluated by runtime code after execution.",
+      "oneOf": [
+        {
+          "description": "The process exit status equals `expected`. This is process-level evidence\nonly: it never by itself establishes task-level success.",
+          "properties": {
+            "expected": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": {
+              "const": "process_exit_status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "expected"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A file exists after execution (optionally modified after the step started).",
+          "properties": {
+            "modified_after_start": {
+              "default": false,
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "const": "file_exists",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A file or directory exists after execution.",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "const": "path_exists",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Captured standard output contains the given text.",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "const": "stdout_contains",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Constraints": {
+      "additionalProperties": false,
+      "description": "Explicit constraints. Unspecified constraints are recorded as absent and are\nnever interpreted as permission.",
+      "properties": {
+        "modify_files": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "network": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NetworkConstraint"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "NetworkConstraint": {
+      "oneOf": [
+        {
+          "const": "allow",
+          "description": "Network access is permitted.",
+          "type": "string"
+        },
+        {
+          "const": "deny",
+          "description": "Network access is forbidden; plans that may use the network are rejected.",
+          "type": "string"
+        },
+        {
+          "const": "unknown",
+          "description": "No statement either way. Not interpreted as permission.",
+          "type": "string"
+        }
+      ]
+    },
+    "RequestContext": {
+      "additionalProperties": false,
+      "properties": {
+        "working_directory": {
+          "description": "Working directory, relative to the caller's directory or absolute.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The externally validated request contract (`cli2.request.v1`).",
+  "properties": {
+    "bindings": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Values for named interface parameters.",
+      "type": "object"
+    },
+    "constraints": {
+      "$ref": "#/$defs/Constraints",
+      "default": {}
+    },
+    "context": {
+      "$ref": "#/$defs/RequestContext",
+      "default": {}
+    },
+    "expectations": {
+      "description": "Additional task-level checks the caller wants verified.",
+      "items": {
+        "$ref": "#/$defs/Check"
+      },
+      "type": "array"
+    },
+    "intent": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "cli2.request.v1",
+      "type": "string"
+    },
+    "selection": {
+      "description": "Capability ID chosen by the caller among previously offered alternatives.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "intent"
+  ],
+  "title": "RequestInput",
+  "type": "object"
+}

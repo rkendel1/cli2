@@ -1,0 +1,690 @@
+//! Intent resolution.
+//!
+//! Resolution order:
+//! 1. **Deterministic match** — the intent names a capability ID, the caller
+//!    selected one, or the intent is exactly a known invocation (`npm run test`).
+//! 2. **Capability retrieval** — lexical/metadata scoring over the local index.
+//! 3. **Ranking** — fit, locality, interface completeness, history; an optional
+//!    [`SemanticRanker`] may adjust scores but cannot add candidates, change
+//!    viability, or construct invocations.
+//! 4. **Plan construction** — exact executable + argument vector from known
+//!    interfaces only; parameters are bound from explicit bindings or values
+//!    present in the intent. Nothing is invented.
+//! 5. **Ambiguity handling** — materially different close candidates produce a
+//!    clarification instead of a guess.
+//!
+//! Policy validation (step 6) is performed by the runtime with
+//! `cli2-execution` on the draft this crate returns.
+
+pub mod terms;
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use cli2_core::{
+    Candidate, Capability, CapabilityKind, Check, Clarification, ClarificationOption,
+    EffectCertainty, Effects, InterfaceCompleteness, PlannedCheck, RecordedRequest, Step,
+    VerificationProcedure,
+};
+
+use terms::{content_stems, equivalents, extract_values, stem, words};
+
+/// Minimum score for a capability to be selected.
+pub const MIN_SCORE: f64 = 3.0;
+/// Candidates within this margin of the best are considered competing.
+pub const AMBIGUITY_MARGIN: f64 = 1.0;
+
+const OUTPUT_PARAMETER_NAMES: &[&str] = &[
+    "out",
+    "output",
+    "outfile",
+    "output_file",
+    "output-file",
+    "dest",
+    "destination",
+    "target",
+];
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HistoryStats {
+    pub successes: u32,
+    pub failures: u32,
+}
+
+/// Extension point for model-assisted ranking. Implementations may only
+/// re-score the candidates they are given.
+pub trait SemanticRanker {
+    fn name(&self) -> &str;
+    fn rerank(
+        &self,
+        intent: &str,
+        candidates: &mut [Candidate],
+        capabilities: &[&Capability],
+    ) -> Result<(), String>;
+}
+
+/// The default: no inference provider. Deterministic ranking only.
+pub struct NoInference;
+
+impl SemanticRanker for NoInference {
+    fn name(&self) -> &str {
+        "none"
+    }
+    fn rerank(&self, _: &str, _: &mut [Candidate], _: &[&Capability]) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+pub struct ResolveContext<'a> {
+    pub request: &'a RecordedRequest,
+    /// Capabilities visible from the request's working context.
+    pub capabilities: &'a [Capability],
+    /// Root of the project the request runs in, if any.
+    pub project_root: Option<&'a str>,
+    pub history: &'a BTreeMap<String, HistoryStats>,
+    pub ranker: &'a dyn SemanticRanker,
+}
+
+/// A resolved plan before policy assessment and sealing.
+#[derive(Debug, Clone)]
+pub struct Draft {
+    pub candidates: Vec<Candidate>,
+    pub selected: Capability,
+    pub selection_reason: String,
+    pub steps: Vec<Step>,
+    pub effects: Effects,
+    pub verification: VerificationProcedure,
+    pub rationale: String,
+    pub limitations: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Resolution {
+    Planned(Box<Draft>),
+    Clarify {
+        candidates: Vec<Candidate>,
+        clarification: Clarification,
+        limitations: Vec<String>,
+    },
+}
+
+struct Scored<'a> {
+    cap: &'a Capability,
+    candidate: Candidate,
+    built: Result<Vec<String>, Unbuildable>,
+}
+
+#[derive(Debug, Clone)]
+enum Unbuildable {
+    RunnerMissing(String),
+    InterfaceUnknown,
+    MissingInputs(Vec<String>),
+    BadBinding(String),
+}
+
+impl Unbuildable {
+    fn reason(&self, cap: &Capability) -> String {
+        match self {
+            Unbuildable::RunnerMissing(r) => format!("`{r}` was not found on PATH"),
+            Unbuildable::InterfaceUnknown => format!(
+                "the interface of `{}` is not characterized; cli2 will not guess its arguments",
+                cap.name
+            ),
+            Unbuildable::MissingInputs(m) => format!("missing required input(s): {}", m.join(", ")),
+            Unbuildable::BadBinding(b) => b.clone(),
+        }
+    }
+}
+
+pub fn resolve(ctx: &ResolveContext<'_>) -> Resolution {
+    let intent = ctx.request.intent.trim();
+    let (values, unquoted) = extract_values(intent);
+    let intent_stems = content_stems(&unquoted);
+    let raw_words = words(&unquoted);
+    let mentions_project = raw_words.iter().any(|w| w == "project" || w == "projects");
+    let intent_lower = intent.to_lowercase();
+    let mut limitations = Vec::new();
+
+    let env_by_id: BTreeMap<&str, &Capability> = ctx
+        .capabilities
+        .iter()
+        .filter(|c| c.kind == CapabilityKind::Executable)
+        .map(|c| (c.id.as_str(), c))
+        .collect();
+
+    // Deterministic selection by the caller.
+    if let Some(sel) = &ctx.request.selection {
+        if !ctx.capabilities.iter().any(|c| &c.id == sel) {
+            return Resolution::Clarify {
+                candidates: vec![],
+                clarification: Clarification {
+                    question: format!("`{sel}` is not a discovered capability. Run `cli2 inventory` to see what is available."),
+                    options: vec![],
+                    missing_inputs: vec![],
+                },
+                limitations,
+            };
+        }
+    }
+
+    let mut scored: Vec<Scored<'_>> = Vec::new();
+    for cap in ctx.capabilities {
+        let (mut score, mut reasons) =
+            score_capability(cap, &intent_stems, &raw_words, mentions_project, ctx);
+        let invocation = interface_invocation(cap);
+        if intent_lower == cap.id.to_lowercase()
+            || intent_lower == invocation.join(" ").to_lowercase()
+            || (cap.kind == CapabilityKind::Executable && intent_lower == cap.name.to_lowercase())
+        {
+            score = 100.0;
+            reasons.insert(0, "intent exactly names this capability".into());
+        }
+        if ctx.request.selection.as_deref() == Some(cap.id.as_str()) {
+            score = 1000.0;
+            reasons.insert(0, "selected by the caller".into());
+        }
+        if score <= 0.0 {
+            continue;
+        }
+        let built = build_arguments(cap, &values, &ctx.request.bindings, &env_by_id);
+        let mut candidate = Candidate {
+            capability_id: cap.id.clone(),
+            kind: cap.kind,
+            score: round2(score),
+            viable: built.is_ok(),
+            reasons,
+            invocation: None,
+        };
+        match &built {
+            Ok(args) => {
+                let mut argv = vec![cap.interface.executable.clone()];
+                argv.extend(args.iter().cloned());
+                candidate.invocation = Some(argv);
+            }
+            Err(why) => candidate
+                .reasons
+                .push(format!("not viable: {}", why.reason(cap))),
+        }
+        scored.push(Scored {
+            cap,
+            candidate,
+            built,
+        });
+    }
+
+    // Optional semantic re-ranking: scores only.
+    if !scored.is_empty() {
+        let before: Vec<Candidate> = scored.iter().map(|s| s.candidate.clone()).collect();
+        let mut cands: Vec<Candidate> = before.clone();
+        let caps: Vec<&Capability> = scored.iter().map(|s| s.cap).collect();
+        match ctx.ranker.rerank(intent, &mut cands, &caps) {
+            Ok(()) => {
+                for (s, (new, old)) in scored.iter_mut().zip(cands.into_iter().zip(before)) {
+                    if new.capability_id == old.capability_id && new.score.is_finite() {
+                        s.candidate.score = round2(new.score);
+                        if (new.score - old.score).abs() > f64::EPSILON {
+                            s.candidate
+                                .reasons
+                                .push(format!("score adjusted by ranker `{}`", ctx.ranker.name()));
+                        }
+                    }
+                }
+            }
+            Err(e) => limitations.push(format!(
+                "semantic ranker `{}` failed ({e}); deterministic ranking was used",
+                ctx.ranker.name()
+            )),
+        }
+    }
+
+    scored.sort_by(|a, b| {
+        b.candidate
+            .score
+            .partial_cmp(&a.candidate.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.candidate.capability_id.cmp(&b.candidate.capability_id))
+    });
+    let candidates: Vec<Candidate> = scored.iter().take(8).map(|s| s.candidate.clone()).collect();
+
+    let best_viable = scored.iter().position(|s| s.built.is_ok());
+    let best_any = scored.first();
+
+    // Nothing relevant at all.
+    let Some(best) = best_any.filter(|s| s.candidate.score >= MIN_SCORE) else {
+        let weak: Vec<&Scored<'_>> = scored
+            .iter()
+            .filter(|s| s.candidate.score >= 2.0)
+            .take(5)
+            .collect();
+        let uncharacterized: Vec<String> = weak
+            .iter()
+            .filter(|s| matches!(s.built, Err(Unbuildable::InterfaceUnknown)))
+            .map(|s| format!("`cli2 describe {} --capture-help`", s.cap.id))
+            .collect();
+        let hint = if uncharacterized.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " Some weak matches have no recorded description; learning more about them may help: {} (or re-run with --capture-help).",
+                uncharacterized.join(", ")
+            )
+        };
+        return Resolution::Clarify {
+            candidates,
+            clarification: Clarification {
+                question: format!(
+                    "No discovered capability clearly matches {intent:?}. Rephrase the intent, name the command, or run `cli2 scan` if it was installed recently.{hint}"
+                ),
+                options: weak.iter().map(|s| option_for(s.cap, &s.candidate)).collect(),
+                missing_inputs: vec![],
+            },
+            limitations,
+        };
+    };
+
+    // The best match cannot be planned and nothing comparable can: ask, don't
+    // fall back to a worse match.
+    let viable_ok = best_viable.map(|i| &scored[i]).filter(|s| {
+        s.candidate.score >= MIN_SCORE
+            && s.candidate.score + AMBIGUITY_MARGIN >= best.candidate.score
+    });
+    let Some(chosen) = viable_ok else {
+        let missing = match &best.built {
+            Err(Unbuildable::MissingInputs(m)) => {
+                m.iter().map(|p| format!("{}:{p}", best.cap.id)).collect()
+            }
+            _ => vec![],
+        };
+        let reason = best
+            .built
+            .as_ref()
+            .err()
+            .map(|e| e.reason(best.cap))
+            .unwrap_or_default();
+        let hint = match &best.built {
+            Err(Unbuildable::InterfaceUnknown) => format!(
+                " Capture its help with `cli2 describe {} --capture-help` (this runs `{} --help`), or re-run with --capture-help.",
+                best.cap.id, best.cap.name
+            ),
+            Err(Unbuildable::MissingInputs(m)) => format!(
+                " Provide {} with --arg NAME=VALUE (or quote the value in the intent).",
+                m.join(", ")
+            ),
+            _ => String::new(),
+        };
+        return Resolution::Clarify {
+            candidates,
+            clarification: Clarification {
+                question: format!(
+                    "The best match, `{}`, cannot be planned yet: {reason}.{hint}",
+                    best.cap.id
+                ),
+                options: vec![option_for(best.cap, &best.candidate)],
+                missing_inputs: missing,
+            },
+            limitations,
+        };
+    };
+
+    // Ambiguity: other viable candidates that are close and materially different.
+    if ctx.request.selection.is_none() && chosen.candidate.score < 100.0 {
+        let competing: Vec<&Scored<'_>> = scored
+            .iter()
+            .filter(|s| {
+                s.built.is_ok()
+                    && s.candidate.capability_id != chosen.candidate.capability_id
+                    && s.candidate.score + AMBIGUITY_MARGIN > chosen.candidate.score
+                    && s.candidate.invocation != chosen.candidate.invocation
+            })
+            .collect();
+        if !competing.is_empty() {
+            let mut options = vec![option_for(chosen.cap, &chosen.candidate)];
+            options.extend(competing.iter().map(|s| option_for(s.cap, &s.candidate)));
+            let names: Vec<String> = options
+                .iter()
+                .map(|o| format!("`{}`", o.capability_id))
+                .collect();
+            return Resolution::Clarify {
+                candidates,
+                clarification: Clarification {
+                    question: format!(
+                        "{intent:?} matches {} capabilities that would do different things: {}. Which one did you mean? (re-run with --pick ID)",
+                        options.len(),
+                        names.join(", ")
+                    ),
+                    options,
+                    missing_inputs: vec![],
+                },
+                limitations,
+            };
+        }
+    }
+
+    let cap = chosen.cap;
+    let args = chosen.built.clone().expect("chosen candidate is viable");
+    let (resolved, exe_fp) =
+        runner_location(cap, &env_by_id).expect("viable implies runner located");
+    let working_directory = match (&cap.kind, &cap.location.project_root) {
+        (CapabilityKind::ProjectTask, Some(root)) => root.clone(),
+        _ => ctx.request.working_directory.clone(),
+    };
+    let step = Step {
+        index: 0,
+        capability_id: cap.id.clone(),
+        capability_fingerprint: cap.fingerprint.clone(),
+        executable: cap.interface.executable.clone(),
+        resolved_executable: resolved,
+        executable_fingerprint: exe_fp,
+        arguments: args.clone(),
+        working_directory,
+    };
+
+    // Verification procedure.
+    let mut checks = vec![PlannedCheck {
+        check: Check::ProcessExitStatus { expected: 0 },
+        task_level: false,
+        source: "runtime".into(),
+    }];
+    for post in &cap.postconditions {
+        checks.push(PlannedCheck {
+            check: post.value.clone(),
+            task_level: post.value.is_task_level(),
+            source: post.source.clone(),
+        });
+    }
+    let fixed = cap.interface.arguments.len();
+    for (param, value) in cap.interface.parameters.iter().zip(args.iter().skip(fixed)) {
+        if OUTPUT_PARAMETER_NAMES.contains(&param.name.as_str()) {
+            checks.push(PlannedCheck {
+                check: Check::FileExists {
+                    path: value.clone(),
+                    modified_after_start: true,
+                },
+                task_level: true,
+                source: format!("interface:output_parameter:{}", param.name),
+            });
+        }
+    }
+    for exp in &ctx.request.expectations {
+        checks.push(PlannedCheck {
+            check: exp.clone(),
+            task_level: exp.is_task_level(),
+            source: "caller_expectation".into(),
+        });
+    }
+    let success_criteria = checks.iter().map(|c| c.check.describe()).collect();
+    let verification = VerificationProcedure {
+        checks,
+        success_criteria,
+    };
+
+    let effects = cap.effects.clone();
+    if effects.certainty < EffectCertainty::Declared {
+        limitations.push(match effects.certainty {
+            EffectCertainty::Unknown => {
+                "The operation's effects are unknown; they have not been characterized.".to_string()
+            }
+            _ => format!(
+                "Effects are assessed heuristically ({}); the complete effects have not been established.",
+                effects.source
+            ),
+        });
+    }
+    if !verification.has_task_level_checks() {
+        limitations.push(
+            "No task-level postcondition is known for this capability; a zero exit status shows only that the process completed, not that the task succeeded.".into(),
+        );
+    }
+    limitations
+        .push("Execution is not sandboxed; the process runs with your user's permissions.".into());
+
+    let runner_up = scored
+        .iter()
+        .find(|s| s.candidate.capability_id != cap.id)
+        .map(|s| {
+            format!(
+                "; next best `{}` scored {}",
+                s.candidate.capability_id, s.candidate.score
+            )
+        })
+        .unwrap_or_else(|| "; it was the only candidate".into());
+    let selection_reason = format!(
+        "`{}` scored {} ({}){}",
+        cap.id,
+        chosen.candidate.score,
+        chosen
+            .candidate
+            .reasons
+            .iter()
+            .filter(|r| !r.starts_with("not viable"))
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("; "),
+        runner_up
+    );
+    let where_from = match cap.kind {
+        CapabilityKind::ProjectTask => format!("defined in {}", cap.location.path),
+        _ => format!("found at {}", cap.location.path),
+    };
+    let rationale = format!(
+        "{} {} ({where_from}){}.",
+        cap.id,
+        cap.purpose
+            .as_ref()
+            .map(|p| format!("— {}", p.value))
+            .unwrap_or_else(|| "has no recorded description".into()),
+        if args.len() > fixed {
+            format!("; inputs bound: {}", args[fixed..].join(", "))
+        } else {
+            String::new()
+        }
+    );
+
+    Resolution::Planned(Box::new(Draft {
+        candidates,
+        selected: cap.clone(),
+        selection_reason,
+        steps: vec![step],
+        effects,
+        verification,
+        rationale,
+        limitations,
+    }))
+}
+
+fn round2(x: f64) -> f64 {
+    (x * 100.0).round() / 100.0
+}
+
+fn option_for(cap: &Capability, cand: &Candidate) -> ClarificationOption {
+    ClarificationOption {
+        capability_id: cap.id.clone(),
+        summary: cap
+            .purpose
+            .as_ref()
+            .map(|p| p.value.clone())
+            .unwrap_or_else(|| format!("{} at {}", cap.name, cap.location.path)),
+        invocation: cand.invocation.clone(),
+    }
+}
+
+fn interface_invocation(cap: &Capability) -> Vec<String> {
+    let mut v = vec![cap.interface.executable.clone()];
+    v.extend(cap.interface.arguments.iter().cloned());
+    v
+}
+
+fn name_stems(name: &str) -> Vec<String> {
+    words(name).iter().map(|w| stem(w)).collect()
+}
+
+fn score_capability(
+    cap: &Capability,
+    intent: &BTreeSet<String>,
+    raw_words: &[String],
+    mentions_project: bool,
+    ctx: &ResolveContext<'_>,
+) -> (f64, Vec<String>) {
+    let mut score = 0.0;
+    let mut reasons = Vec::new();
+    let names = name_stems(&cap.name);
+    let mut counted: BTreeSet<String> = BTreeSet::new();
+
+    let mut direct = 0;
+    let mut via_syn = 0;
+    for n in &names {
+        if intent.contains(n) {
+            direct += 1;
+            counted.insert(n.clone());
+        } else if let Some(m) = equivalents(n).into_iter().find(|e| intent.contains(e)) {
+            via_syn += 1;
+            counted.insert(m);
+        }
+    }
+    let matched = direct + via_syn;
+    if matched > 0 && matched == names.len() {
+        // More specific names that are fully matched rank higher.
+        score += 6.0 + (names.len() - 1) as f64;
+        reasons.push(if via_syn > 0 {
+            format!("intent term matches name `{}` (synonym)", cap.name)
+        } else {
+            format!("intent names `{}`", cap.name)
+        });
+    } else if matched > 0 {
+        score += 3.0 * direct as f64 + 2.0 * via_syn as f64 - (names.len() - matched) as f64;
+        reasons.push(format!("intent partially matches name `{}`", cap.name));
+    } else {
+        let lname = cap.name.to_lowercase();
+        if let Some(s) = intent
+            .iter()
+            .filter(|s| s.len() >= 4 && lname.contains(s.as_str()))
+            .max_by_key(|s| s.len())
+        {
+            // Scaled by how much of the name the term covers.
+            score += 1.0 + 2.0 * (s.len() as f64 / lname.len().max(1) as f64);
+            counted.insert(s.clone());
+            reasons.push(format!("name `{}` contains `{s}`", cap.name));
+        }
+    }
+
+    // Description / help text.
+    let mut text = cap
+        .purpose
+        .as_ref()
+        .map(|p| p.value.clone())
+        .unwrap_or_default();
+    if let Some(h) = &cap.help {
+        text.push(' ');
+        text.extend(h.excerpt.chars().take(600));
+    }
+    if !text.is_empty() {
+        let ptoks = content_stems(&text);
+        let mut hits = Vec::new();
+        for s in intent.iter().filter(|s| !counted.contains(*s)) {
+            if equivalents(s).iter().any(|e| ptoks.contains(e)) {
+                hits.push(s.clone());
+            }
+        }
+        // Without any name match, the description must cover at least half
+        // of what the intent asks for; one shared word is not enough.
+        let name_matched = score > 0.0;
+        let covers = !intent.is_empty() && hits.len() * 2 >= intent.len();
+        if !hits.is_empty() && (name_matched || covers) {
+            let add = (1.5 * hits.len() as f64).min(4.5);
+            score += add;
+            reasons.push(format!("description mentions {}", hits.join(", ")));
+        }
+    }
+
+    let relevant = score > 0.0;
+    if cap.kind == CapabilityKind::ProjectTask {
+        if raw_words.contains(&cap.interface.executable) && relevant {
+            score += 2.0;
+            reasons.push(format!("intent mentions `{}`", cap.interface.executable));
+        }
+        let local =
+            ctx.project_root.is_some() && cap.location.project_root.as_deref() == ctx.project_root;
+        if local && relevant {
+            score += 1.5;
+            reasons.push("defined by the current project".into());
+            if mentions_project {
+                score += 1.0;
+                reasons.push("intent refers to the project".into());
+            }
+        }
+    }
+    if relevant {
+        if let Some(h) = ctx.history.get(&cap.id) {
+            if h.successes > 0 {
+                score += 0.25 * h.successes.min(4) as f64;
+                reasons.push(format!("observed {} successful run(s)", h.successes));
+            }
+        }
+    }
+    (score, reasons)
+}
+
+fn runner_location(
+    cap: &Capability,
+    env: &BTreeMap<&str, &Capability>,
+) -> Option<(String, String)> {
+    match cap.kind {
+        CapabilityKind::Executable => Some((cap.location.path.clone(), cap.fingerprint.clone())),
+        _ => env
+            .get(format!("executable:{}", cap.interface.executable).as_str())
+            .map(|r| (r.location.path.clone(), r.fingerprint.clone())),
+    }
+}
+
+fn build_arguments(
+    cap: &Capability,
+    values: &[String],
+    bindings: &BTreeMap<String, String>,
+    env: &BTreeMap<&str, &Capability>,
+) -> Result<Vec<String>, Unbuildable> {
+    if runner_location(cap, env).is_none() {
+        return Err(Unbuildable::RunnerMissing(cap.interface.executable.clone()));
+    }
+    if cap.interface.completeness == InterfaceCompleteness::Unknown {
+        return Err(Unbuildable::InterfaceUnknown);
+    }
+    for name in bindings.keys() {
+        if !cap.interface.parameters.iter().any(|p| &p.name == name) {
+            return Err(Unbuildable::BadBinding(format!(
+                "`{}` has no parameter named `{name}`",
+                cap.id
+            )));
+        }
+    }
+    let mut args = cap.interface.arguments.clone();
+    let mut pool: Vec<&String> = values.iter().collect();
+    let mut missing = Vec::new();
+    for p in &cap.interface.parameters {
+        if let Some(v) = bindings.get(&p.name) {
+            pool.retain(|x| *x != v);
+            args.push(v.clone());
+            continue;
+        }
+        if p.variadic {
+            args.extend(pool.drain(..).cloned());
+            continue;
+        }
+        if !pool.is_empty() {
+            args.push(pool.remove(0).clone());
+        } else if p.required {
+            missing.push(p.name.clone());
+        } else {
+            break; // optional positionals after a gap cannot be supplied
+        }
+    }
+    if !missing.is_empty() {
+        return Err(Unbuildable::MissingInputs(missing));
+    }
+    for a in &args[cap.interface.arguments.len()..] {
+        if a.starts_with('-') {
+            return Err(Unbuildable::BadBinding(format!(
+                "value {a:?} looks like a flag; cli2 only passes documented flags"
+            )));
+        }
+    }
+    Ok(args)
+}

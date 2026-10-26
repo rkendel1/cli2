@@ -1,0 +1,10 @@
+[package]
+name = "cli2-resolver"
+description = "CLI 2.0 intent resolution: retrieval, ranking, ambiguity handling and plan construction"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cli2-core.workspace = true

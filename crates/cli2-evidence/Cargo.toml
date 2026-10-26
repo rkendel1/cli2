@@ -1,0 +1,17 @@
+[package]
+name = "cli2-evidence"
+description = "CLI 2.0 evidence journal and postcondition verification"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cli2-core.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

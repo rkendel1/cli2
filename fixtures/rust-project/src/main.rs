@@ -1,0 +1,11 @@
+fn main() {
+    println!("hello from the cli2 rust fixture");
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn adds() {
+        assert_eq!(1 + 1, 2);
+    }
+}

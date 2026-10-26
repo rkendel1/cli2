@@ -1,0 +1,14 @@
+{
+  "name": "cli2-node-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fixture project for CLI 2.0 acceptance tests",
+  "scripts": {
+    "test": "node test.js",
+    "test:fail": "node test.js --fail",
+    "build": "node build.js",
+    "lint": "node -e \"console.log('lint ok')\"",
+    "publish-package": "node publish.js",
+    "slow": "node -e \"setTimeout(() => console.log('done'), 60000)\""
+  }
+}

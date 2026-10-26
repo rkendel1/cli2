@@ -1,0 +1,35 @@
+[package]
+name = "cli2"
+description = "CLI 2.0: capability-aware intent resolution with approved execution and verifiable evidence"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "cli2"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cli2"
+path = "src/main.rs"
+
+[dependencies]
+cli2-core.workspace = true
+cli2-discovery.workspace = true
+cli2-index.workspace = true
+cli2-resolver.workspace = true
+cli2-execution.workspace = true
+cli2-evidence.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+ctrlc.workspace = true
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+jsonschema.workspace = true
+rusqlite.workspace = true
+tempfile.workspace = true
