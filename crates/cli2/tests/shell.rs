@@ -118,7 +118,7 @@ fn completions_come_from_the_real_command_tree() {
             if !l.starts_with("  ") {
                 break;
             }
-            if let Some(name) = l.trim().split_whitespace().next() {
+            if let Some(name) = l.split_whitespace().next() {
                 commands.push(name.to_string());
             }
         }
