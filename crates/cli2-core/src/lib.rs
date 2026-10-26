@@ -35,6 +35,12 @@ pub fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
+/// RFC 3339 timestamp (same format as `now_rfc3339`) for `days` days ago.
+pub fn rfc3339_days_ago(days: u64) -> String {
+    let d = chrono::Duration::days(days.min(36_500) as i64);
+    (chrono::Utc::now() - d).to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
 pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }

@@ -104,6 +104,12 @@ struct RunArgs {
     /// (bounded) to learn its interface.
     #[arg(long)]
     capture_help: bool,
+    /// What to print: `response` (only the captured stdout), `command-and-response`,
+    /// or `json` (structured, with the captured streams). Default: the usual
+    /// human report. Approval prompts still appear (on stderr); a plan that was
+    /// not executed produces no response.
+    #[arg(long, value_name = "FORMAT", value_parser = ["response", "command-and-response", "json"])]
+    output: Option<String>,
     /// Resolver: deterministic | apple-fm | auto (default: from config.json,
     /// else deterministic).
     #[arg(long, value_name = "MODE", value_parser = ["deterministic", "apple-fm", "auto"])]
@@ -142,6 +148,9 @@ enum Cmd {
         /// Explicitly approve the plan with this digest.
         #[arg(long, value_name = "DIGEST")]
         approve: Option<String>,
+        /// What to print: response | command-and-response | json (see `cli2 --help`).
+        #[arg(long, value_name = "FORMAT", value_parser = ["response", "command-and-response", "json"])]
+        output: Option<String>,
     },
     /// Show what is known about a capability.
     Describe {
@@ -176,6 +185,37 @@ enum Cmd {
         #[command(subcommand)]
         cmd: ModelCmd,
     },
+    /// List, show and copy captured command results; prune old content.
+    Output {
+        #[command(subcommand)]
+        cmd: OutputCmd,
+    },
+    /// Run a structured batch of requests (see README: `cli2.batch.v1`).
+    Batch {
+        /// A cli2.batch.v1 JSON file ('-' for stdin).
+        #[arg(
+            long,
+            value_name = "FILE",
+            required_unless_present = "show",
+            conflicts_with = "show"
+        )]
+        request_file: Option<String>,
+        /// Show a recorded batch (batch_…) instead of running one.
+        #[arg(long, value_name = "BATCH_ID")]
+        show: Option<String>,
+        /// Approve steps whose policy permits non-interactive confirmation (never explicit or forbidden ones).
+        #[arg(long, short = 'y')]
+        yes: bool,
+        /// Bound each process to this many seconds.
+        #[arg(long, value_name = "SECONDS")]
+        timeout: Option<u64>,
+        /// Allow `--help` capture for steps whose best match has an unknown interface.
+        #[arg(long)]
+        capture_help: bool,
+        /// Resolver for every step: deterministic | apple-fm | auto.
+        #[arg(long, value_name = "MODE", value_parser = ["deterministic", "apple-fm", "auto"])]
+        resolver: Option<String>,
+    },
     /// Print the optional shell integration (`c2` helper and completion) to stdout.
     /// Nothing is installed or modified; review the output, then source it.
     ShellInit {
@@ -191,6 +231,39 @@ enum Cmd {
     Schema {
         /// request | capability | plan | result | approval
         name: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum OutputCmd {
+    /// List recent captured results (newest first).
+    List {
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    /// Show one captured result: command, process status, task status, verification, streams.
+    Show {
+        /// out_<n>, out_<n>.<step>, exec_<n>, or `latest` (the newest execution that ran a process).
+        id: String,
+    },
+    /// Print one representation of a captured result to stdout (or, with --clipboard, to the clipboard).
+    Copy {
+        id: String,
+        /// response (stdout) | command-and-response | stdout | stderr
+        #[arg(long, value_name = "PART", default_value = "response", value_parser = ["response", "command-and-response", "stdout", "stderr"])]
+        part: String,
+        /// Copy to the system clipboard instead of printing. Opt-in; never automatic.
+        #[arg(long)]
+        clipboard: bool,
+    },
+    /// Delete the captured content of old executions (records and IDs stay).
+    Prune {
+        /// Executions that started more than this many days ago.
+        #[arg(long, value_name = "DAYS")]
+        older_than_days: u64,
+        /// Report what would be removed without removing it.
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
@@ -498,6 +571,7 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
             plan_id,
             yes,
             approve,
+            output,
         }) => {
             let mut engine = Engine::open(config)?;
             install_cancel_handler(&engine);
@@ -509,12 +583,86 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
                 capture_help: false,
                 interactive,
             };
+            let quiet = output.is_some();
             let result = if json {
                 engine.exec_stored(&plan_id, &opts, &mut NonInteractive)?
             } else {
-                engine.exec_stored(&plan_id, &opts, &mut Human { interactive })?
+                engine.exec_stored(&plan_id, &opts, &mut Human { interactive, quiet })?
             };
-            Ok(report(&engine, &result, json))
+            match &output {
+                Some(fmt) => Ok(emit_output(&engine, &result, fmt)),
+                None => Ok(report(&engine, &result, json)),
+            }
+        }
+        Some(Cmd::Output { cmd }) => {
+            let mut engine = Engine::open(config)?;
+            output_command(&mut engine, cmd, json)
+        }
+        Some(Cmd::Batch {
+            request_file,
+            show,
+            yes,
+            timeout,
+            capture_help,
+            resolver,
+        }) => {
+            let mut engine = Engine::open(config)?;
+            if let Some(id) = show {
+                let v = engine.batch_record(&id)?;
+                if json {
+                    print_json(&v);
+                } else {
+                    print!("{}", render_batch_value(&v));
+                }
+                return Ok(0);
+            }
+            if let Some(mode) = resolver
+                .as_deref()
+                .and_then(cli2::semantic::ResolverMode::parse)
+            {
+                engine.set_resolver_mode(mode);
+            }
+            install_cancel_handler(&engine);
+            let src = request_file.expect("clap requires --request-file or --show");
+            let text = if src == "-" {
+                let mut t = String::new();
+                std::io::Read::read_to_string(&mut std::io::stdin(), &mut t)?;
+                t
+            } else {
+                std::fs::read_to_string(&src)?
+            };
+            let file = cli2::batch::BatchFile::parse(&text)?;
+            let opts = RunOptions {
+                execute: true,
+                yes,
+                approve_token: None,
+                timeout_secs: timeout,
+                capture_help,
+                interactive,
+            };
+            let result = if json {
+                cli2::batch::run_batch(&mut engine, &file, &opts, &mut NonInteractive)?
+            } else {
+                // Per-step previews and prompts go to stderr; the report is stdout.
+                cli2::batch::run_batch(
+                    &mut engine,
+                    &file,
+                    &opts,
+                    &mut Human {
+                        interactive,
+                        quiet: true,
+                    },
+                )?
+            };
+            if json {
+                print_json(&result);
+            } else {
+                print!(
+                    "{}",
+                    render_batch_value(&serde_json::to_value(&result).expect("serializable"))
+                );
+            }
+            Ok(result.status.exit_code())
         }
         Some(Cmd::Plan { intent, run }) => {
             let mut run = run;
@@ -628,11 +776,12 @@ fn do_intent(
         capture_help: run.capture_help,
         interactive,
     };
+    let quiet = run.output.is_some();
     loop {
         let result = if json {
             engine.run(req.clone(), &opts, &mut NonInteractive)?
         } else {
-            engine.run(req.clone(), &opts, &mut Human { interactive })?
+            engine.run(req.clone(), &opts, &mut Human { interactive, quiet })?
         };
         // Interactive disambiguation: let the person pick, then resolve again.
         if interactive && result.status == Status::NeedsClarification {
@@ -642,7 +791,11 @@ fn do_intent(
                 .map(|c| c.options.clone())
                 .unwrap_or_default();
             if options.len() > 1 && req.selection.is_none() {
-                print!("{}", render::result(&result));
+                if quiet {
+                    eprint!("{}", render::result(&result));
+                } else {
+                    print!("{}", render::result(&result));
+                }
                 if let Some(choice) =
                     prompt(&format!("Choose 1-{} (Enter to cancel): ", options.len()))
                 {
@@ -656,8 +809,277 @@ fn do_intent(
                 return Ok(result.status.exit_code());
             }
         }
-        return Ok(report(&engine, &result, json));
+        return Ok(match &run.output {
+            Some(fmt) => emit_output(&engine, &result, fmt),
+            None => report(&engine, &result, json),
+        });
     }
+}
+
+/// Print a selected `--output` format. stdout carries only the selected
+/// representation; everything else (failure notes, why nothing ran) goes to
+/// stderr, and the exit code is the usual one for the request's status.
+fn emit_output(engine: &Engine, result: &ExecutionResult, format: &str) -> i32 {
+    use cli2::output::{started_steps, OutputId};
+    let seq = engine.result_seq(&result.request_id).ok().flatten();
+    let steps: Vec<_> = started_steps(result).collect();
+    let id_of = |step: usize| seq.map(|seq| OutputId { seq, step }.format());
+    match format {
+        "json" => {
+            let outputs: Vec<serde_json::Value> = steps
+                .iter()
+                .filter_map(|s| id_of(s.index))
+                .filter_map(|id| engine.output_record(&id, true).ok())
+                .filter_map(|r| serde_json::to_value(r).ok())
+                .collect();
+            print_json(&serde_json::json!({
+                "schema_version": "cli2.output_result.v1",
+                "request_id": result.request_id,
+                "plan_id": result.plan_id,
+                "status": result.status,
+                "executed": !steps.is_empty(),
+                "message": result.message,
+                "process_status": result.process_status,
+                "verification": result.verification,
+                "approval": result.approval,
+                "clarification": result.clarification,
+                "rejection": result.rejection,
+                "limitations": result.limitations,
+                "evidence_ref": result.evidence_ref,
+                "outputs": outputs,
+            }));
+        }
+        _ => {
+            if steps.is_empty() {
+                // Nothing ran: there is no response, and a plan is not a result.
+                eprint!("{}", render::result(result));
+            } else {
+                for s in &steps {
+                    let Some(id) = id_of(s.index) else { continue };
+                    let part = if format == "response" {
+                        cli2::output::Part::Response
+                    } else {
+                        cli2::output::Part::CommandAndResponse
+                    };
+                    match engine.output_part(&id, part) {
+                        Ok(bytes) => {
+                            let _ = std::io::stdout().write_all(&bytes);
+                        }
+                        Err(e) => eprintln!("cli2: {e}"),
+                    }
+                    if format == "response" {
+                        if let Ok(err) = engine.output_part(&id, cli2::output::Part::Stderr) {
+                            let _ = std::io::stderr().write_all(&err);
+                        }
+                    }
+                }
+                if result.status != Status::Succeeded {
+                    // A failure is never hidden by choosing a quiet format.
+                    eprintln!("cli2: {}", result.message);
+                    for st in &steps {
+                        if st.stdout_truncated || st.stderr_truncated {
+                            eprintln!("cli2: output was truncated when captured; it is incomplete");
+                        }
+                    }
+                } else if steps
+                    .iter()
+                    .any(|st| st.stdout_truncated || st.stderr_truncated)
+                {
+                    eprintln!("cli2: output was truncated when captured; it is incomplete");
+                }
+            }
+        }
+    }
+    result.status.exit_code()
+}
+
+fn output_command(engine: &mut Engine, cmd: OutputCmd, json: bool) -> Result<i32, EngineError> {
+    use cli2::output::Part;
+    match cmd {
+        OutputCmd::List { limit } => {
+            let list = engine.outputs(limit)?;
+            if json {
+                print_json(
+                    &serde_json::json!({"schema_version": cli2::output::OUTPUT_LIST_SCHEMA, "outputs": list}),
+                );
+            } else if list.is_empty() {
+                println!("No captured results yet.");
+            } else {
+                for o in list {
+                    let exit = o
+                        .exit_code
+                        .map(|c| format!("exit {c}"))
+                        .unwrap_or_else(|| format!("{:?}", o.termination));
+                    println!(
+                        "{:<10} {}  {:<9} {:<19} {:<10} {}{}",
+                        o.output_id,
+                        o.started_at,
+                        exit,
+                        o.task_status,
+                        format!("{:?}", o.verification).to_lowercase(),
+                        o.command,
+                        if o.truncated { "  [truncated]" } else { "" }
+                    );
+                }
+            }
+            Ok(0)
+        }
+        OutputCmd::Show { id } => {
+            let rec = engine.output_record(&id, true)?;
+            if json {
+                print_json(&rec);
+            } else {
+                print!("{}", render_output_record(&rec));
+            }
+            Ok(0)
+        }
+        OutputCmd::Copy {
+            id,
+            part,
+            clipboard,
+        } => {
+            let part = Part::parse(&part).expect("validated by clap");
+            let bytes = engine.output_part(&id, part)?;
+            if clipboard {
+                cli2::clipboard::copy(&bytes).map_err(|e| EngineError::Invalid(e.to_string()))?;
+                eprintln!("cli2: copied {} byte(s) to the clipboard", bytes.len());
+            } else {
+                std::io::stdout().write_all(&bytes)?;
+            }
+            Ok(0)
+        }
+        OutputCmd::Prune {
+            older_than_days,
+            dry_run,
+        } => {
+            let cutoff = cli2_core::rfc3339_days_ago(older_than_days);
+            let r = engine.prune_outputs(&cutoff, dry_run)?;
+            if json {
+                print_json(&r);
+            } else {
+                println!(
+                    "{} {} execution(s) older than {older_than_days} day(s): {} content blob(s), {} byte(s){}; {} kept because something newer shares them.",
+                    if dry_run { "Would remove content of" } else { "Removed content of" },
+                    r.executions, r.blobs_removed, r.bytes_freed,
+                    if dry_run { " (dry run, nothing deleted)" } else { "" },
+                    r.kept_shared
+                );
+            }
+            Ok(0)
+        }
+    }
+}
+
+fn render_output_record(r: &cli2::output::OutputRecord) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let _ = writeln!(
+        s,
+        "{}  ({} · request {}{})",
+        r.output_id,
+        r.execution_id,
+        r.request_id,
+        r.plan_id
+            .as_ref()
+            .map(|p| format!(" · plan {p}"))
+            .unwrap_or_default()
+    );
+    let _ = writeln!(s, "  command       {}", r.command.display);
+    let _ = writeln!(s, "  directory     {}", r.working_directory);
+    let _ = writeln!(
+        s,
+        "  ran           {} for {} ms",
+        r.started_at, r.duration_ms
+    );
+    let _ = writeln!(
+        s,
+        "  process       {}{}",
+        cli2::output::termination_word(r.process.termination, r.process.signal),
+        r.process
+            .exit_code
+            .map(|c| format!(", exit {c}"))
+            .unwrap_or_default()
+    );
+    let _ = writeln!(s, "  task          {}: {}", r.task.status, r.task.message);
+    let _ = writeln!(s, "  verification  {:?}", r.verification.status);
+    for c in &r.verification.checks {
+        let _ = writeln!(s, "                - {:?}: {}", c.status, c.detail);
+    }
+    for (name, st) in [("stdout", &r.stdout), ("stderr", &r.stderr)] {
+        let _ = writeln!(
+            s,
+            "  {name:<13} {} byte(s){}{}",
+            st.bytes,
+            if st.truncated {
+                format!(", TRUNCATED (kept {})", st.captured_bytes)
+            } else {
+                String::new()
+            },
+            if st.available {
+                ""
+            } else {
+                ", content no longer retained"
+            }
+        );
+    }
+    for n in &r.notes {
+        let _ = writeln!(s, "  note          {n}");
+    }
+    let _ = writeln!(s, "  evidence      {}", r.evidence_ref);
+    let _ = writeln!(
+        s,
+        "  copy          cli2 output copy {} --part response|command-and-response|stdout|stderr",
+        r.output_id
+    );
+    s
+}
+
+fn render_batch_value(v: &serde_json::Value) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let _ = writeln!(
+        s,
+        "Batch {}: {} ({})",
+        v["batch_id"].as_str().unwrap_or("?"),
+        v["status"].as_str().unwrap_or("?"),
+        v["summary"].as_str().unwrap_or("")
+    );
+    for st in v["steps"].as_array().into_iter().flatten() {
+        let status = st["status"]
+            .as_str()
+            .unwrap_or_else(|| st["state"].as_str().unwrap_or("?"));
+        let mark = if status == "succeeded" { "✔" } else { "✘" };
+        let outs: Vec<&str> = st["output_ids"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|x| x.as_str())
+            .collect();
+        let _ = writeln!(
+            s,
+            "  {mark} {:<14} {:<19} {}  {}",
+            st["id"].as_str().unwrap_or("?"),
+            status,
+            outs.join(","),
+            st["message"].as_str().unwrap_or("")
+        );
+        if let Some(d) = st["approval_digest"].as_str() {
+            let _ = writeln!(
+                s,
+                "      approve with: cli2 exec {} --approve {}",
+                st["plan_id"].as_str().unwrap_or("PLAN_ID"),
+                d.trim_start_matches("sha256:")
+                    .chars()
+                    .take(12)
+                    .collect::<String>()
+            );
+        }
+    }
+    let _ = writeln!(
+        s,
+        "  inspect a result: cli2 output show <ID>   copy: cli2 output copy <ID> --part response"
+    );
+    s
 }
 
 fn report(engine: &Engine, result: &ExecutionResult, json: bool) -> i32 {
@@ -705,10 +1127,17 @@ fn prompt(question: &str) -> Option<String> {
 /// Human output: shows previews on stdout; asks on stderr when interactive.
 struct Human {
     interactive: bool,
+    /// Keep stdout clean for a selected `--output` format: previews are not
+    /// printed, except that an approval prompt is always preceded by the
+    /// preview, on stderr, so approval is never given blind.
+    quiet: bool,
 }
 
 impl Interaction for Human {
     fn preview(&mut self, plan: &Plan) {
+        if self.quiet {
+            return;
+        }
         print!("{}", render::preview(plan));
         let _ = std::io::stdout().flush();
     }
@@ -716,6 +1145,9 @@ impl Interaction for Human {
     fn ask(&mut self, plan: &Plan) -> ApprovalAnswer {
         if !self.interactive {
             return ApprovalAnswer::Unavailable;
+        }
+        if self.quiet {
+            eprint!("{}", render::preview(plan));
         }
         let answer = match plan.approval.level {
             ApprovalLevel::Explicit => prompt(&format!(

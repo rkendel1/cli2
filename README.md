@@ -174,6 +174,126 @@ was learned from its own `--help` output (only because `--capture-help` asked
 for that), its output parameter produced a task-level postcondition, and its
 unknown effects meant it could not run without approval.
 
+## Output capture and reuse
+
+Every executed process is already recorded in the evidence journal: its real
+argv (argument boundaries intact), working directory, separate stdout and
+stderr, termination (exited / timed out / interrupted / could not start), exit
+code, timing, and the verification result. This slice gives those records stable
+IDs and ways to print, copy and hand them on. It adds no second store.
+
+```sh
+c2 "find references to authentication" --yes --output response             # only the response
+c2 "find references to authentication" --yes --output command-and-response # `$ rg authentication` + result
+c2 "find references to authentication" --yes --output json                 # structured, for tools and agents
+
+cli2 output list                                  # recent results, newest first
+cli2 output show latest                           # command, process, task, verification, streams
+cli2 output copy out_12                           # the response (stdout) on stdout
+cli2 output copy out_12 --part command-and-response | pbcopy
+cli2 output copy out_12 --part stderr
+cli2 output copy latest --clipboard               # opt-in: use the platform clipboard utility
+```
+
+**IDs.** `exec_N` is the journal's result sequence number (never reused);
+`out_N` is its (first) process and `out_N.S` step S. `latest` means the newest
+execution that started a process, and its last step; it errors if there is none
+and never guesses. IDs stay valid for as long as the record is retained.
+
+**Formats.** `response` prints exactly the captured stdout and nothing else on
+stdout (no preview, no command, no narration); the process's own stderr goes to
+stderr. `command-and-response` prints `$ <command>`, the stdout, then
+`[stderr]` and the stderr if there was any, then `[exit N]` / `[timed out]` /
+`[interrupted]` and `[stdout truncated …]` markers on their own lines. The
+command is shell-quoted for reading only; it is data and is never executed.
+`json` (`cli2.output_result.v1`) carries, per process, `output_id`,
+`execution_id`, `request_id`, `plan_id`, `command.argv` (the real argv) and
+`command.display`, `working_directory`, timing, `process` (termination, exit
+code, signal, `exited_zero`), `stdout`/`stderr` (`text`, `bytes`,
+`captured_bytes`, `truncated`, `available`, `evidence_ref`), `task` (the
+request's status), `verification`, and `notes`. Process status, task status
+and verification are separate on purpose: **exit 0 is not task success**.
+Nothing is ever labelled a verified answer unless a verification check passed.
+
+**Approval and failures are not quiet.** Approval prompts still appear (the
+preview is shown on stderr, then the prompt), `--yes` means exactly what it
+meant before, and the exit code is the usual one for the request's status. A
+plan that was not run, was not approved, was rejected, or needs clarification
+prints **no response** (the reason goes to stderr; JSON says `"executed": false`
+with no outputs). A failed or timed-out command still prints what it captured,
+plus a one-line failure note on stderr. The default output, `--json`, and
+`cli2.result.v1` are unchanged.
+
+**Storage and limits.** Stdout and stderr are stored as content-addressed blobs
+in `$CLI2_HOME/evidence/blobs` (identical output is stored once). At most 8 MiB
+per stream per process is kept; set `{"output": {"max_bytes": N}}` in
+`$CLI2_HOME/config.json` (1 KiB to 256 MiB). If a stream exceeds the limit the
+excess is dropped, `truncated: true` is set everywhere the output appears, the
+original byte count is kept, exit and verification status are unaffected, and
+no format presents the retained part as complete. JSON records embed at most
+256 KiB of text per stream (`inline_truncated`); `output copy` always returns
+the full retained content. cli2 does **not** redact captured output: it is
+exactly what the process printed, so treat the evidence directory like your
+shell history. Nothing is deleted automatically; `cli2 output prune
+--older-than-days N [--dry-run]` deletes the *content* of older executions
+(unless a newer result or another record still refers to the same bytes). Their
+records, IDs and the hash-chained journal remain, `output show` reports "content
+no longer retained", and `output copy` fails clearly. Retrieval never reruns a
+command.
+
+**Clipboard.** Nothing is copied unless you pass `--clipboard`. cli2 uses the
+platform's own utility from `PATH`: `pbcopy` (macOS); `wl-copy`, `xclip` or
+`xsel` (Linux); `clip` (Windows). A missing utility, an unsupported platform
+or a failing utility is an error and nothing is printed or copied elsewhere.
+
+### Batches
+
+```json
+{ "schema_version": "cli2.batch.v1",
+  "on_failure": "stop",
+  "steps": [
+    { "id": "scan",  "request": { "schema_version": "cli2.request.v1", "intent": "scan",
+                                  "context": { "working_directory": "." } } },
+    { "id": "tests", "depends_on": ["scan"],
+      "request": { "schema_version": "cli2.request.v1", "intent": "run the project tests" } }
+  ] }
+```
+
+```sh
+cli2 batch --request-file tasks.json          # prompts per step when interactive
+cli2 batch --request-file tasks.json --yes    # confirm-level steps only
+cli2 --json batch --request-file tasks.json   # cli2.batch_result.v1
+cli2 batch --show batch_…                     # a recorded batch
+```
+
+A batch is an ordered list of ordinary requests, not a shell language: each step
+is a `cli2.request.v1` object that goes through the same resolver, planner,
+policy, approval, execution, verification and evidence path as `cli2 "…"`.
+There are no command strings, pipes, redirection, substitution or templates,
+and the file has no way to approve anything (unknown keys are rejected).
+
+* **Failure:** `on_failure: "stop"` (default) leaves the steps after the first
+  non-`succeeded` step `not_run`; `"continue"` keeps going except for steps whose
+  `depends_on` did not succeed (`skipped_dependency`). An interrupt always stops.
+* **Approval:** per step, exactly as for one request. Interactive runs prompt
+  for each step; `--yes` approves `confirm`-level steps only, never explicit or
+  forbidden ones. A step that needs approval it does not get is
+  `awaiting_approval` with its plan recorded and its digest reported, so
+  `cli2 exec PLAN_ID --approve DIGEST` can run it later.
+* **References:** results refer to steps by `id` and by output ID. A step can
+  depend on an earlier step succeeding; no output is ever substituted into a
+  later request.
+* **Status:** `cancelled` if a step was interrupted; `succeeded` if every step
+  succeeded; if no process ran at all, the first blocking step's status
+  (`awaiting_approval`, `needs_clarification`, `rejected`); `failed` if nothing
+  succeeded; otherwise `partially_succeeded`. Exit codes are the usual ones
+  (0, 3, 4, 6, 1, 8, 7). Each step reports its own status, output IDs and, inline,
+  the same record as `--output json`.
+
+From zsh, Ghostty and VS Code the integration is unchanged: `c2` forwards
+`--output …` like any other flag, and `cli2 output copy … | pbcopy` works in any
+terminal.
+
 ## Commands
 
 | Command | Purpose |
@@ -188,6 +308,9 @@ unknown effects meant it could not run without approval.
 | `cli2 task show ID` / `cli2 task list` | Inspect recorded requests, plans, approvals, results, and the event journal. |
 | `cli2 evidence REF` | Print a captured output blob (`evidence:sha256:…`). |
 | `cli2 schema [NAME]` | Print the published JSON Schemas. |
+| `cli2 "intent" --output response\|command-and-response\|json` | Choose what is printed (see *Output capture and reuse*). Also on `plan` and `exec`. |
+| `cli2 output list\|show ID\|copy ID [--part …] [--clipboard]\|prune --older-than-days N` | Retrieve captured results by stable ID. |
+| `cli2 batch --request-file FILE [--yes]` / `--show BATCH_ID` | Run a structured batch of requests. |
 | `cli2 shell-init zsh` | Print the optional zsh integration (`c2`, completion). Writes nothing. |
 | `cli2 completions zsh` | Print a standalone zsh completion script generated from the CLI definition. |
 

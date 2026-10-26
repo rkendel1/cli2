@@ -122,6 +122,9 @@ impl Default for ResolverSettings {
 #[serde(deny_unknown_fields)]
 struct ConfigFile {
     resolver: Option<RawResolver>,
+    /// Validated by `output::OutputSettings`.
+    #[allow(dead_code)]
+    output: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]

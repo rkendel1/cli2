@@ -43,6 +43,9 @@ pub struct Config {
     /// Bound on `<exe> --help` captures.
     pub help_timeout: Duration,
     pub policy: Policy,
+    /// Captured bytes kept per stream per process; `None`: from config.json
+    /// (`output.max_bytes`), else 8 MiB.
+    pub max_output_bytes: Option<usize>,
     /// Resolver settings; when `None`, read from `$CLI2_HOME/config.json`
     /// (absent file means deterministic resolution only).
     pub resolver: Option<ResolverSettings>,
@@ -84,6 +87,7 @@ impl Config {
             default_timeout_secs: DEFAULT_TIMEOUT_SECS,
             help_timeout: HELP_TIMEOUT,
             policy,
+            max_output_bytes: None,
             resolver: None,
         })
     }
@@ -239,6 +243,7 @@ pub struct Engine {
     ranker: Box<dyn SemanticRanker>,
     cancel: CancelToken,
     settings: ResolverSettings,
+    output_max_bytes: usize,
     /// `None`: legacy behaviour (run the installed ranker, single pass).
     mode: Option<ResolverMode>,
     semantic: Option<AppleFmRanker>,
@@ -257,6 +262,18 @@ pub struct SemanticEvent {
     pub fallback: bool,
     pub fallback_reason: Option<String>,
     pub report: Option<SemanticReport>,
+}
+
+/// What `prune_outputs` did (or would do, for a dry run).
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct PruneReport {
+    pub dry_run: bool,
+    /// Executions older than the cutoff.
+    pub executions: usize,
+    pub blobs_removed: usize,
+    pub bytes_freed: u64,
+    /// Content kept because something newer still refers to it.
+    pub kept_shared: usize,
 }
 
 /// What `capture_interface` did.
@@ -303,6 +320,15 @@ fn discard_stale_interfaces(caps: &mut [Capability]) -> Vec<String> {
     notes
 }
 
+fn output_limit(config: &Config) -> Result<usize, EngineError> {
+    match config.max_output_bytes {
+        Some(n) => Ok(n),
+        None => crate::output::OutputSettings::load(&config.home)
+            .map(|s| s.max_bytes)
+            .map_err(EngineError::Invalid),
+    }
+}
+
 fn settings_for(config: &Config) -> Result<ResolverSettings, EngineError> {
     match &config.resolver {
         Some(s) => Ok(s.clone()),
@@ -315,7 +341,10 @@ impl Engine {
         let index = Index::open(&config.index_path())?;
         let journal = Journal::open(&config.evidence_dir())?;
         let settings = settings_for(&config)?;
-        Ok(Self::assemble(config, index, journal, settings))
+        let output_max = output_limit(&config)?;
+        let mut e = Self::assemble(config, index, journal, settings);
+        e.output_max_bytes = output_max;
+        Ok(e)
     }
 
     fn assemble(
@@ -334,6 +363,7 @@ impl Engine {
             ranker: Box::new(NoInference),
             cancel: CancelToken::new(),
             settings,
+            output_max_bytes: crate::output::DEFAULT_MAX_BYTES,
             mode,
             semantic,
             last_semantic: None,
@@ -369,7 +399,10 @@ impl Engine {
         let (index, moved) = Index::rebuild(&config.index_path())?;
         let journal = Journal::open(&config.evidence_dir())?;
         let settings = settings_for(&config)?;
-        Ok((Self::assemble(config, index, journal, settings), moved))
+        let output_max = output_limit(&config)?;
+        let mut e = Self::assemble(config, index, journal, settings);
+        e.output_max_bytes = output_max;
+        Ok((e, moved))
     }
 
     /// Replace the semantic ranker (extension point; default: none).
@@ -1474,12 +1507,13 @@ impl Engine {
                     "step": step,
                 }),
             )?;
-            let spec = ProcessSpec::new(
+            let mut spec = ProcessSpec::new(
                 &step.resolved_executable,
                 step.arguments.clone(),
                 &step.working_directory,
                 Duration::from_secs(plan.timeout_secs),
             );
+            spec.max_output_bytes = self.output_max_bytes;
             let out = cli2_execution::run(&spec, &self.cancel);
             let stdout_ref = self.journal.store_blob(&out.stdout)?;
             let stderr_ref = self.journal.store_blob(&out.stderr)?;
@@ -1611,6 +1645,190 @@ impl Engine {
     }
 
     // ---------------------------------------------------------------- evidence
+
+    // ----------------------------------------------------------------- outputs
+
+    /// Resolve `latest`, `out_N[.S]` or `exec_N` to a stored execution and step.
+    fn locate_output(&self, id: &str) -> Result<(i64, ExecutionResult, usize), EngineError> {
+        use crate::output::{OutputId, ParsedId};
+        let not_found = || EngineError::NotFound(format!("no captured output with ID {id}"));
+        let (seq, step) = if id == "latest" {
+            // Deterministic: the newest recorded execution that started a process;
+            // for several steps, its last started step.
+            let rows = self.journal.result_rows(200)?;
+            let (seq, r) = rows
+                .into_iter()
+                .find(|(_, r)| crate::output::started_steps(r).next().is_some())
+                .ok_or_else(|| {
+                    EngineError::NotFound("no executed command has been recorded yet".into())
+                })?;
+            let last = crate::output::started_steps(&r)
+                .last()
+                .map(|s| s.index)
+                .unwrap_or(0);
+            return Ok((seq, r, last));
+        } else {
+            match OutputId::parse(id).ok_or_else(|| {
+                EngineError::Invalid(format!(
+                    "{id:?} is not an output ID (expected out_<n>, out_<n>.<step>, exec_<n> or latest)"
+                ))
+            })? {
+                ParsedId::Output(o) => (o.seq, Some(o.step)),
+                ParsedId::Execution(seq) => (seq, None),
+            }
+        };
+        let r = self.journal.result_row(seq).map_err(|_| not_found())?;
+        let step = match step {
+            Some(s) => s,
+            None => crate::output::started_steps(&r)
+                .last()
+                .map(|s| s.index)
+                .ok_or_else(not_found)?,
+        };
+        match r.steps.iter().find(|s| s.index == step) {
+            Some(s) if s.termination != Termination::NotStarted => Ok((seq, r, step)),
+            _ => Err(not_found()),
+        }
+    }
+
+    /// The stable execution sequence number of a request's newest result.
+    pub fn result_seq(&self, request_id: &str) -> Result<Option<i64>, EngineError> {
+        Ok(self.journal.latest_result_seq(request_id)?)
+    }
+
+    /// Record a batch summary in the hash-chained journal under its batch ID.
+    pub fn record_batch(
+        &self,
+        batch_id: &str,
+        data: &serde_json::Value,
+    ) -> Result<(), EngineError> {
+        Ok(self.journal.event(batch_id, "batch_recorded", data)?)
+    }
+
+    pub fn batch_record(&self, batch_id: &str) -> Result<serde_json::Value, EngineError> {
+        self.journal
+            .latest_event_data(batch_id, "batch_recorded")?
+            .ok_or_else(|| EngineError::NotFound(format!("no batch with ID {batch_id}")))
+    }
+
+    /// Recent executions that ran a process, newest first.
+    pub fn outputs(&self, limit: usize) -> Result<Vec<crate::output::OutputSummary>, EngineError> {
+        let mut out = Vec::new();
+        for (seq, r) in self.journal.result_rows(limit.saturating_mul(4).max(50))? {
+            for s in crate::output::started_steps(&r) {
+                out.push(crate::output::summarize(seq, &r, s));
+            }
+            if out.len() >= limit {
+                break;
+            }
+        }
+        out.truncate(limit);
+        Ok(out)
+    }
+
+    pub fn output_record(
+        &self,
+        id: &str,
+        inline: bool,
+    ) -> Result<crate::output::OutputRecord, EngineError> {
+        let (seq, r, step) = self.locate_output(id)?;
+        let s = r.steps.iter().find(|s| s.index == step).expect("located");
+        Ok(crate::output::OutputRecord::build(
+            &self.journal,
+            seq,
+            &r,
+            s,
+            inline,
+        ))
+    }
+
+    /// The bytes or text of one representation. Never re-runs anything.
+    pub fn output_part(&self, id: &str, part: crate::output::Part) -> Result<Vec<u8>, EngineError> {
+        use crate::output::Part;
+        let (_, r, step) = self.locate_output(id)?;
+        let s = r.steps.iter().find(|s| s.index == step).expect("located");
+        Ok(match part {
+            Part::Response | Part::Stdout => crate::output::response_bytes(&self.journal, s)?,
+            Part::Stderr => crate::output::stderr_bytes(&self.journal, s)?,
+            Part::CommandAndResponse => {
+                crate::output::command_and_response(&self.journal, s)?.into_bytes()
+            }
+        })
+    }
+
+    /// Delete the captured content of executions started before `cutoff`
+    /// (RFC 3339). Records, IDs and the hash chain remain; the content just
+    /// stops being retrievable. Content still referenced by a newer result
+    /// (identical output is stored once) or by non-result events is kept.
+    pub fn prune_outputs(
+        &mut self,
+        cutoff: &str,
+        dry_run: bool,
+    ) -> Result<PruneReport, EngineError> {
+        let rows = self.journal.result_rows(1_000_000)?;
+        let old: Vec<i64> = rows
+            .iter()
+            .filter(|(_, r)| {
+                let started = crate::output::started_steps(r)
+                    .map(|s| s.started_at.as_str())
+                    .min();
+                started.is_some_and(|t| t < cutoff)
+            })
+            .map(|(s, _)| *s)
+            .collect();
+        let old_requests: Vec<String> = rows
+            .iter()
+            .filter(|(s, _)| old.contains(s))
+            .map(|(_, r)| r.request_id.clone())
+            .collect();
+        let mut candidates = std::collections::BTreeSet::new();
+        for (seq, r) in &rows {
+            if old.contains(seq) {
+                for s in crate::output::started_steps(r) {
+                    candidates.extend(s.stdout_ref.iter().chain(s.stderr_ref.iter()).cloned());
+                }
+            }
+        }
+        let mut report = PruneReport {
+            executions: old.len(),
+            dry_run,
+            ..Default::default()
+        };
+        for blob in candidates {
+            if !self.journal.blob_exists(&blob) {
+                continue;
+            }
+            let shared = self.journal.results_mentioning(&blob, &old)?
+                || self.journal.blob_mentioned_outside(&blob, &old_requests)?;
+            if shared {
+                report.kept_shared += 1;
+                continue;
+            }
+            let size = self
+                .journal
+                .read_blob(&blob)
+                .map(|b| b.len() as u64)
+                .unwrap_or(0);
+            if !dry_run {
+                self.journal.delete_blob(&blob)?;
+            }
+            report.blobs_removed += 1;
+            report.bytes_freed += size;
+        }
+        if !dry_run {
+            self.journal.event(
+                "system",
+                "outputs_pruned",
+                &serde_json::json!({
+                    "cutoff": cutoff,
+                    "executions": report.executions,
+                    "blobs_removed": report.blobs_removed,
+                    "bytes_freed": report.bytes_freed,
+                }),
+            )?;
+        }
+        Ok(report)
+    }
 
     pub fn task(&self, id: &str) -> Result<TaskRecord, EngineError> {
         Ok(self.journal.task(id)?)

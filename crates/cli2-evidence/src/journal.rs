@@ -118,6 +118,120 @@ impl Journal {
         Ok(format!("evidence:sha256:{hash}"))
     }
 
+    /// The data of the newest event of `kind` recorded under `request_id`.
+    pub fn latest_event_data(
+        &self,
+        request_id: &str,
+        kind: &str,
+    ) -> Result<Option<serde_json::Value>, JournalError> {
+        let json: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT json FROM events WHERE request_id = ?1 AND kind = ?2 ORDER BY seq DESC LIMIT 1",
+                params![request_id, kind],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(json.and_then(|j| serde_json::from_str(&j).ok()))
+    }
+
+    /// Whether a blob is still present (it may have been pruned).
+    pub fn blob_exists(&self, reference: &str) -> bool {
+        reference
+            .strip_prefix("evidence:sha256:")
+            .filter(|h| h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit()))
+            .is_some_and(|h| self.blobs.join(h).is_file())
+    }
+
+    /// Remove a blob's content. The journal's records and hash chain are
+    /// untouched; the reference simply stops resolving.
+    pub fn delete_blob(&self, reference: &str) -> Result<bool, JournalError> {
+        let Some(h) = reference
+            .strip_prefix("evidence:sha256:")
+            .filter(|h| h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit()))
+        else {
+            return Ok(false);
+        };
+        match std::fs::remove_file(self.blobs.join(h)) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Recorded results, newest first, with their stable sequence numbers
+    /// (the execution IDs: `exec_<seq>`; sequence numbers are never reused).
+    pub fn result_rows(&self, limit: usize) -> Result<Vec<(i64, ExecutionResult)>, JournalError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT seq, json FROM results ORDER BY seq DESC LIMIT ?1")?;
+        let rows = stmt.query_map(params![limit as i64], |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (seq, json) = row?;
+            out.push((seq, from_json(&json)?));
+        }
+        Ok(out)
+    }
+
+    pub fn result_row(&self, seq: i64) -> Result<ExecutionResult, JournalError> {
+        let json: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT json FROM results WHERE seq = ?1",
+                params![seq],
+                |r| r.get(0),
+            )
+            .optional()?;
+        from_json(&json.ok_or_else(|| JournalError::NotFound(format!("exec_{seq}")))?)
+    }
+
+    /// The newest result recorded for a request.
+    pub fn latest_result_seq(&self, request_id: &str) -> Result<Option<i64>, JournalError> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT seq FROM results WHERE request_id = ?1 ORDER BY seq DESC LIMIT 1",
+                params![request_id],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Whether any event other than `result_recorded` events, and other than
+    /// events belonging to `except_requests`, mentions the blob (for example a
+    /// captured `--help` that happens to produce the same bytes).
+    pub fn blob_mentioned_outside(
+        &self,
+        reference: &str,
+        except_requests: &[String],
+    ) -> Result<bool, JournalError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT request_id FROM events WHERE kind <> 'result_recorded' AND instr(json, ?1) > 0",
+        )?;
+        let owners = stmt
+            .query_map(params![reference], |r| r.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(owners.iter().any(|o| !except_requests.contains(o)))
+    }
+
+    /// Results (by seq) whose stored JSON mentions `reference`, other than `except`.
+    pub fn results_mentioning(
+        &self,
+        reference: &str,
+        except: &[i64],
+    ) -> Result<bool, JournalError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT seq FROM results WHERE instr(json, ?1) > 0")?;
+        let seqs = stmt
+            .query_map(params![reference], |r| r.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(seqs.iter().any(|s| !except.contains(s)))
+    }
+
     pub fn read_blob(&self, reference: &str) -> Result<Vec<u8>, JournalError> {
         let hash = reference
             .strip_prefix("evidence:sha256:")
