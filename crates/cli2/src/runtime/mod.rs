@@ -206,8 +206,20 @@ impl Runtime {
     }
 
     pub fn capabilities(&self, project: &str) -> Result<CapabilitiesResult> {
+        self.capabilities_of_kinds(project, &[])
+    }
+
+    /// The capabilities visible from `project`, only of `kinds` when any are given.
+    pub fn capabilities_of_kinds(
+        &self,
+        project: &str,
+        kinds: &[cli2_core::CapabilityKind],
+    ) -> Result<CapabilitiesResult> {
         let dir = self.project_dir(project)?;
-        let caps = self.engine()?.inventory(&dir)?;
+        let mut caps = self.engine()?.inventory(&dir)?;
+        if !kinds.is_empty() {
+            caps.retain(|c| kinds.contains(&c.kind));
+        }
         Ok(CapabilitiesResult {
             project: dir.display().to_string(),
             capabilities: caps,

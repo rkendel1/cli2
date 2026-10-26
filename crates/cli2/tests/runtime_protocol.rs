@@ -1537,3 +1537,88 @@ fn file_operations_work_over_the_wire_and_conform_to_their_published_schemas() {
     let escape = send("file.read", json!({"project": proj, "path": "../outside"}));
     assert_eq!(escape["code"], "invalid_params");
 }
+
+#[test]
+fn capabilities_can_be_listed_by_kind_and_the_original_request_still_works() {
+    use cli2_core::CapabilityKind;
+    let rig = Rig::new();
+    let proj = rig.proj();
+    let mut c = rig.client();
+
+    // Everything, as before: a project's tasks and the executables on PATH.
+    let all = c.capabilities(&proj).unwrap();
+    assert!(all
+        .capabilities
+        .iter()
+        .any(|x| x.kind == CapabilityKind::Executable));
+    assert!(all
+        .capabilities
+        .iter()
+        .any(|x| x.id == "project-task:make:hello"));
+
+    // Only the project's own tasks: what an embedder wants when it must stay within a message.
+    let tasks = c
+        .capabilities_of(&proj, &[CapabilityKind::ProjectTask])
+        .unwrap();
+    assert!(!tasks.capabilities.is_empty());
+    assert!(tasks
+        .capabilities
+        .iter()
+        .all(|x| x.kind == CapabilityKind::ProjectTask));
+    assert!(tasks
+        .capabilities
+        .iter()
+        .any(|x| x.id == "project-task:make:hello"));
+    assert!(tasks.capabilities.len() < all.capabilities.len());
+
+    // Several kinds at once; the union, nothing else.
+    let both = c
+        .capabilities_of(
+            &proj,
+            &[CapabilityKind::ProjectTask, CapabilityKind::Executable],
+        )
+        .unwrap();
+    assert_eq!(both.capabilities.len(), all.capabilities.len());
+
+    // On the wire: the original `{project}` form, the new form, and a kind that does not exist.
+    let mut s = UnixStream::connect(&rig.socket).unwrap();
+    let mut r = BufReader::new(s.try_clone().unwrap());
+    let mut send = |op: &str, params: Value| -> Value {
+        let req = json!({"id": "x", "op": op, "params": params});
+        validate("request", &req);
+        s.write_all(format!("{req}\n").as_bytes()).unwrap();
+        let mut line = String::new();
+        r.read_line(&mut line).unwrap();
+        let resp: Value = serde_json::from_str(&line).unwrap();
+        validate("response", &resp);
+        if resp["ok"] == true {
+            resp["result"].clone()
+        } else {
+            resp["error"].clone()
+        }
+    };
+    send("hello", json!({"client": {"name": "t"}, "versions": [1]}));
+    let old = json!({"project": proj});
+    validate("capabilities.list.params", &old);
+    assert!(
+        send("capabilities.list", old)["capabilities"]
+            .as_array()
+            .unwrap()
+            .len()
+            >= all.capabilities.len()
+    );
+    let filtered = json!({"project": proj, "kinds": ["project_task"]});
+    validate("capabilities.list.params", &filtered);
+    let got = send("capabilities.list", filtered);
+    validate("capabilities.list.result", &got);
+    assert!(got["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|x| x["kind"] == "project_task"));
+    let bad = send(
+        "capabilities.list",
+        json!({"project": proj, "kinds": ["unicorn"]}),
+    );
+    assert_eq!(bad["code"], "invalid_params");
+}

@@ -1,0 +1,45 @@
+{
+  "$defs": {
+    "CapabilityKind": {
+      "description": "What sort of thing a capability is.",
+      "oneOf": [
+        {
+          "const": "executable",
+          "description": "An executable file found on `PATH`.",
+          "type": "string"
+        },
+        {
+          "const": "project_task",
+          "description": "A task defined by a project manifest (npm script, Make target, ...).",
+          "type": "string"
+        },
+        {
+          "const": "shell_operation",
+          "description": "A shell operation. Not produced by slice one discovery: built-ins are not\nrepresented because their invocation context cannot be captured accurately\nwith an executable + argument vector.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "List what cli2 knows how to run. Without `kinds` this is everything discovered, including\nevery executable on `PATH`, which on a real machine can be larger than a protocol message.\nA client that wants only a project's own tasks says so.",
+  "properties": {
+    "kinds": {
+      "description": "Only capabilities of these kinds (`executable`, `project_task`, `shell_operation`).\nAbsent or empty: all of them.",
+      "items": {
+        "$ref": "#/$defs/CapabilityKind"
+      },
+      "type": "array"
+    },
+    "project": {
+      "description": "Absolute path to a local directory.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project"
+  ],
+  "title": "CapabilitiesListParams",
+  "type": "object"
+}
