@@ -1,0 +1,81 @@
+{
+  "$defs": {
+    "ClientInfo": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "Limits": {
+      "properties": {
+        "max_event_wait_ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_message_bytes": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_message_bytes",
+        "max_event_wait_ms"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "instance_id": {
+      "description": "Identifies this runtime instance. It owns the executions it starts.",
+      "type": "string"
+    },
+    "limits": {
+      "$ref": "#/$defs/Limits"
+    },
+    "operations": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "protocol_version": {
+      "description": "The highest version both sides support; used for the rest of the connection.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "server": {
+      "$ref": "#/$defs/ClientInfo"
+    },
+    "supported_versions": {
+      "items": {
+        "format": "uint32",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "protocol_version",
+    "supported_versions",
+    "server",
+    "instance_id",
+    "operations",
+    "limits"
+  ],
+  "title": "HelloResult",
+  "type": "object"
+}

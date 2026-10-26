@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "plan_digest": {
+      "description": "The plan's full digest, as returned in the plan. Proves the approver\nsaw this exact plan; any other digest is refused.",
+      "type": "string"
+    },
+    "plan_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "plan_id",
+    "plan_digest"
+  ],
+  "title": "ApproveParams",
+  "type": "object"
+}

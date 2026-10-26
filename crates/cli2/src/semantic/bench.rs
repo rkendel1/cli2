@@ -142,6 +142,7 @@ pub fn run_benchmark(
         timeout_secs: None,
         capture_help: false,
         interactive: false,
+        ..Default::default()
     };
 
     let mut reports = Vec::new();

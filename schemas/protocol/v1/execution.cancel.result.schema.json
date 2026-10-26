@@ -1,0 +1,48 @@
+{
+  "$defs": {
+    "Lifecycle": {
+      "oneOf": [
+        {
+          "const": "running",
+          "description": "The runtime is executing it.",
+          "type": "string"
+        },
+        {
+          "const": "cancelling",
+          "description": "A cancel was accepted; the process is being terminated.",
+          "type": "string"
+        },
+        {
+          "const": "finished",
+          "description": "Finished; `result` holds the durable outcome.",
+          "type": "string"
+        },
+        {
+          "const": "interrupted_unknown",
+          "description": "The runtime that started it ended without recording an outcome. Whether\nthe command completed is unknown; no success is claimed.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "accepted": {
+      "description": "A cancel was delivered to a live execution.",
+      "type": "boolean"
+    },
+    "execution_id": {
+      "type": "string"
+    },
+    "lifecycle": {
+      "$ref": "#/$defs/Lifecycle"
+    }
+  },
+  "required": [
+    "execution_id",
+    "accepted",
+    "lifecycle"
+  ],
+  "title": "CancelResult",
+  "type": "object"
+}

@@ -115,6 +115,10 @@ pub enum EngineError {
     NotFound(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    /// The runtime refused an operation for a stable, machine-readable reason
+    /// (for example an approval that does not match the plan, or a stale plan).
+    #[error("{message}")]
+    Refused { code: &'static str, message: String },
     /// `--resolver apple-fm` was requested, the model could not be used, and
     /// no deterministic resolution could stand in for it.
     #[error("{0}")]
@@ -142,6 +146,7 @@ impl EngineError {
             EngineError::Invalid(_) => "invalid_input",
             EngineError::Io(_) => "io_error",
             EngineError::SemanticUnavailable(_) => "semantic_resolver_unavailable",
+            EngineError::Refused { code, .. } => code,
         }
     }
 
@@ -151,6 +156,7 @@ impl EngineError {
             EngineError::IndexCorrupt(_) => 9,
             EngineError::Invalid(_) | EngineError::NotFound(_) => 2,
             EngineError::SemanticUnavailable(_) => 11,
+            EngineError::Refused { .. } => 6,
             EngineError::Journal(JournalError::NotFound(_)) => 2,
             _ => 10,
         }
@@ -197,8 +203,50 @@ impl Interaction for NonInteractive {
     }
 }
 
+/// Structured, ordered observations of an execution, for embedding clients.
+/// Callbacks must not block; they report, they never control.
+pub trait ExecutionObserver: Send + Sync {
+    /// A step's process was started.
+    fn step_started(&self, _step: &Step, _pid: u32) {}
+    /// Output, as it is read (not subject to the capture limit).
+    fn output(&self, _index: usize, _stream: cli2_execution::StreamKind, _chunk: &[u8]) {}
+    fn step_finished(&self, _result: &StepResult) {}
+    fn verification(&self, _verification: &Verification) {}
+    /// The final, durably recorded result.
+    fn finished(&self, _result: &ExecutionResult) {}
+}
+
+#[derive(Clone)]
+pub struct EngineObserver(pub std::sync::Arc<dyn ExecutionObserver>);
+
+impl std::fmt::Debug for EngineObserver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("EngineObserver")
+    }
+}
+
+struct StepObserver {
+    step: Step,
+    inner: std::sync::Arc<dyn ExecutionObserver>,
+}
+
+impl cli2_execution::ProcessObserver for StepObserver {
+    fn spawned(&self, pid: u32) {
+        self.inner.step_started(&self.step, pid);
+    }
+    fn output(&self, stream: cli2_execution::StreamKind, chunk: &[u8]) {
+        self.inner.output(self.step.index, stream, chunk);
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct RunOptions {
+    /// An approval decision already recorded in the journal (by `approve_plan`).
+    /// It is not trusted: `authorize` still checks that it is granted, bound to
+    /// this plan's ID and exact digest, and sufficient for the required level.
+    pub preapproved: Option<ApprovalRecord>,
+    /// Observe the execution (status changes and output) as it happens.
+    pub observer: Option<EngineObserver>,
     /// Execute the plan (false: plan only, `--no-exec`).
     pub execute: bool,
     /// `--yes`: approve plans whose required level is `confirm`.
@@ -1273,7 +1321,7 @@ impl Engine {
         self.execute_plan(&request, plan, opts, ui)
     }
 
-    fn finish_without_execution(
+    pub(crate) fn finish_without_execution(
         &mut self,
         request: &RecordedRequest,
         plan: &Plan,
@@ -1316,7 +1364,7 @@ impl Engine {
     }
 
     /// Check that what the plan references is still what exists.
-    fn stale_reasons(&mut self, plan: &Plan) -> Vec<String> {
+    pub(crate) fn stale_reasons(&mut self, plan: &Plan) -> Vec<String> {
         let mut reasons = Vec::new();
         for step in &plan.steps {
             match cli2_discovery::executable_fingerprint(Path::new(&step.resolved_executable)) {
@@ -1378,6 +1426,7 @@ impl Engine {
         // 2. Authority.
         let required = plan.approval.level;
         let mut approval: Option<ApprovalRecord> = None;
+        let mut preapproved_used = false;
         let mut denial_note: Option<String> = None;
         match required {
             ApprovalLevel::Forbidden => {
@@ -1405,7 +1454,10 @@ impl Engine {
                 ));
             }
             ApprovalLevel::Confirm | ApprovalLevel::Explicit => {
-                if let Some(token) = &opts.approve_token {
+                if let Some(pre) = &opts.preapproved {
+                    approval = Some(pre.clone());
+                    preapproved_used = true;
+                } else if let Some(token) = &opts.approve_token {
                     if digest_matches(token, &plan.digest) {
                         approval = Some(grant(
                             &plan,
@@ -1458,7 +1510,7 @@ impl Engine {
                 }
             }
         }
-        if let Some(a) = &approval {
+        if let Some(a) = approval.as_ref().filter(|_| !preapproved_used) {
             self.journal.record_approval(&request.request_id, a)?;
         }
         if let Err(err) = authorize(&plan, approval.as_ref()) {
@@ -1522,6 +1574,14 @@ impl Engine {
                 Duration::from_secs(plan.timeout_secs),
             );
             spec.max_output_bytes = self.output_max_bytes;
+            if let Some(o) = &opts.observer {
+                spec.observer = Some(cli2_execution::Observer(std::sync::Arc::new(
+                    StepObserver {
+                        step: step.clone(),
+                        inner: o.0.clone(),
+                    },
+                )));
+            }
             let out = cli2_execution::run(&spec, &self.cancel);
             let stdout_ref = self.journal.store_blob(&out.stdout)?;
             let stderr_ref = self.journal.store_blob(&out.stderr)?;
@@ -1548,6 +1608,9 @@ impl Engine {
             };
             self.journal
                 .event(&request.request_id, "step_finished", &sr)?;
+            if let Some(o) = &opts.observer {
+                o.0.step_finished(&sr);
+            }
             if !sr.process_succeeded() {
                 stopped = true;
             }
@@ -1568,6 +1631,9 @@ impl Engine {
         let verification = cli2_evidence::verify(&plan.verification, &observations);
         self.journal
             .event(&request.request_id, "verification_completed", &verification)?;
+        if let Some(o) = &opts.observer {
+            o.0.verification(&verification);
+        }
 
         let ran: Vec<&StepResult> = step_results
             .iter()
@@ -1649,7 +1715,131 @@ impl Engine {
             plan: Some(plan.clone()),
         };
         self.journal.record_result(&result, Some(&plan))?;
+        if let Some(o) = &opts.observer {
+            o.0.finished(&result);
+        }
         Ok(result)
+    }
+
+    /// Record an explicit approval for exactly this plan.
+    ///
+    /// The caller must present the plan's full digest, proving they are
+    /// approving the plan as made. Nothing is executed. The approval is
+    /// bound to this plan ID and digest and is refused if the plan was
+    /// modified, is forbidden by policy, is stale, or was rejected. It is
+    /// only a decision: `exec_stored` with `preapproved` still runs the
+    /// ordinary authorization check at execution time.
+    pub fn approve_plan(
+        &mut self,
+        plan_id: &str,
+        plan_digest: &str,
+    ) -> Result<ApprovalRecord, EngineError> {
+        let refuse = |code: &'static str, message: String| EngineError::Refused { code, message };
+        let plan = self.journal.plan(plan_id)?;
+        if !plan.is_intact() {
+            return Err(refuse(
+                "plan_modified",
+                "the stored plan no longer matches its digest".into(),
+            ));
+        }
+        if plan_digest != plan.digest {
+            return Err(refuse(
+                "approval_mismatch",
+                format!("the digest presented is not this plan's digest ({}); approvals apply only to the exact plan", plan.short_digest()),
+            ));
+        }
+        if plan.approval.level == ApprovalLevel::Forbidden {
+            return Err(refuse(
+                "forbidden",
+                "this operation cannot be approved under the active policy".into(),
+            ));
+        }
+        if self
+            .journal
+            .latest_event_data(&plan.request_id, "plan_rejected")?
+            .is_some()
+        {
+            return Err(refuse(
+                "plan_rejected",
+                "this plan was rejected and cannot be approved".into(),
+            ));
+        }
+        let stale = self.stale_reasons(&plan);
+        if !stale.is_empty() {
+            return Err(refuse(
+                "stale_plan",
+                format!(
+                    "the plan is stale ({}); plan the intent again",
+                    stale.join("; ")
+                ),
+            ));
+        }
+        let method = if plan.approval.level == ApprovalLevel::None {
+            ApprovalMethod::PolicyAutomatic
+        } else {
+            ApprovalMethod::DigestToken
+        };
+        let rec = grant(&plan, method, ApprovalDecision::Granted);
+        self.journal.record_approval(&plan.request_id, &rec)?;
+        Ok(rec)
+    }
+
+    /// Record that an execution ended without an outcome being recorded (its
+    /// runtime died). Nothing is claimed about whether the command finished.
+    pub fn record_interrupted(
+        &mut self,
+        plan_id: &str,
+        message: String,
+    ) -> Result<ExecutionResult, EngineError> {
+        let plan = self.journal.plan(plan_id)?;
+        let request = self.journal.request(&plan.request_id)?;
+        self.finish_without_execution(&request, &plan, Status::Cancelled, vec![], None, message)
+    }
+
+    /// Reject a plan: record the decision and leave it unexecuted. A rejected
+    /// plan can no longer be approved.
+    pub fn reject_plan(
+        &mut self,
+        plan_id: &str,
+        reason: Option<String>,
+    ) -> Result<ExecutionResult, EngineError> {
+        let plan = self.journal.plan(plan_id)?;
+        let request = self.journal.request(&plan.request_id)?;
+        if !plan.is_intact() {
+            return Err(EngineError::Refused {
+                code: "plan_modified",
+                message: "the stored plan no longer matches its digest".into(),
+            });
+        }
+        let already_ran = self.journal.result_rows(100_000)?.iter().any(|(_, r)| {
+            r.plan_id.as_deref() == Some(plan_id)
+                && crate::output::started_steps(r).next().is_some()
+        });
+        if already_ran {
+            return Err(EngineError::Refused {
+                code: "already_executed",
+                message: "this plan has already been executed; it cannot be rejected".into(),
+            });
+        }
+        let rec = grant(&plan, ApprovalMethod::DigestToken, ApprovalDecision::Denied);
+        self.journal.record_approval(&request.request_id, &rec)?;
+        self.journal.event(
+            &request.request_id,
+            "plan_rejected",
+            &serde_json::json!({"plan_id": plan_id, "reason": reason}),
+        )?;
+        let summary = summary_from(&plan, Some(&rec), false);
+        self.finish_without_execution(
+            &request,
+            &plan,
+            Status::Cancelled,
+            vec![],
+            Some(summary),
+            format!(
+                "Rejected: the plan was declined before execution; nothing was run.{}",
+                reason.map(|r| format!(" Reason: {r}")).unwrap_or_default()
+            ),
+        )
     }
 
     // ---------------------------------------------------------------- evidence

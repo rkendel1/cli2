@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "One request line. `id` is chosen by the client and echoed in the response.",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "op": {
+      "description": "The operation name (see [`ops`]).",
+      "type": "string"
+    },
+    "params": {
+      "default": null
+    }
+  },
+  "required": [
+    "id",
+    "op"
+  ],
+  "title": "Request",
+  "type": "object"
+}

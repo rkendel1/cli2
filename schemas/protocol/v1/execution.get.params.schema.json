@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "execution_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "execution_id"
+  ],
+  "title": "ExecutionIdParams",
+  "type": "object"
+}

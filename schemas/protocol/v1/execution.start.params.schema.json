@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "approval_id": {
+      "description": "The approval from `plan.approve`. Required unless the plan needs none.\nAn approval authorizes at most one execution.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "plan_id": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "plan_id"
+  ],
+  "title": "StartParams",
+  "type": "object"
+}

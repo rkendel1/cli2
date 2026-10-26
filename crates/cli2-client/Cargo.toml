@@ -1,0 +1,18 @@
+[package]
+name = "cli2-client"
+description = "A minimal client for the CLI 2.0 local protocol (depends only on the protocol types)"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "cli2-client-demo"
+path = "src/main.rs"
+
+[dependencies]
+cli2-core.workspace = true
+cli2-protocol.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

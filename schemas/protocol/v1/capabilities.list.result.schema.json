@@ -1,0 +1,755 @@
+{
+  "$defs": {
+    "Capability": {
+      "properties": {
+        "characterization": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Characterization"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effects": {
+          "$ref": "#/$defs/Effects"
+        },
+        "enrichment": {
+          "$ref": "#/$defs/EnrichmentState"
+        },
+        "fingerprint": {
+          "description": "Changes whenever the underlying executable or manifest entry changes.",
+          "type": "string"
+        },
+        "help": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HelpCapture"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "description": "Stable logical ID, e.g. `executable:rg` or `project-script:npm:test`.",
+          "type": "string"
+        },
+        "interface": {
+          "$ref": "#/$defs/Interface"
+        },
+        "kind": {
+          "$ref": "#/$defs/CapabilityKind"
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "name": {
+          "type": "string"
+        },
+        "postconditions": {
+          "default": [],
+          "description": "Task-level checks known to be meaningful for this capability.",
+          "items": {
+            "$ref": "#/$defs/Provenanced2"
+          },
+          "type": "array"
+        },
+        "purpose": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Provenanced"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schema_version": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/DiscoverySource"
+        }
+      },
+      "required": [
+        "schema_version",
+        "id",
+        "kind",
+        "name",
+        "location",
+        "source",
+        "fingerprint",
+        "enrichment",
+        "interface",
+        "effects"
+      ],
+      "type": "object"
+    },
+    "CapabilityKind": {
+      "description": "What sort of thing a capability is.",
+      "oneOf": [
+        {
+          "const": "executable",
+          "description": "An executable file found on `PATH`.",
+          "type": "string"
+        },
+        {
+          "const": "project_task",
+          "description": "A task defined by a project manifest (npm script, Make target, ...).",
+          "type": "string"
+        },
+        {
+          "const": "shell_operation",
+          "description": "A shell operation. Not produced by slice one discovery: built-ins are not\nrepresented because their invocation context cannot be captured accurately\nwith an executable + argument vector.",
+          "type": "string"
+        }
+      ]
+    },
+    "CaptureStatus": {
+      "description": "How an interface capture ended.",
+      "oneOf": [
+        {
+          "enum": [
+            "timed_out"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "parsed",
+          "description": "Help text was obtained and parsed (its completeness is on the interface).",
+          "type": "string"
+        },
+        {
+          "const": "no_usable_help",
+          "description": "The executable ran but produced nothing usable.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Could not be run, or was terminated abnormally.",
+          "type": "string"
+        }
+      ]
+    },
+    "Characterization": {
+      "description": "A user declaration about a capability. It is bound to the fingerprint at the\ntime of declaration and is discarded if the capability changes.",
+      "properties": {
+        "declared_at": {
+          "type": "string"
+        },
+        "effects": {
+          "items": {
+            "$ref": "#/$defs/EffectClass"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "purpose": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "fingerprint",
+        "declared_at"
+      ],
+      "type": "object"
+    },
+    "Check": {
+      "description": "A deterministic check evaluated by runtime code after execution.",
+      "oneOf": [
+        {
+          "description": "The process exit status equals `expected`. This is process-level evidence\nonly: it never by itself establishes task-level success.",
+          "properties": {
+            "expected": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "type": {
+              "const": "process_exit_status",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "expected"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A file exists after execution (optionally modified after the step started).",
+          "properties": {
+            "modified_after_start": {
+              "default": false,
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "const": "file_exists",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A file or directory exists after execution.",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "const": "path_exists",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Captured standard output contains the given text.",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "const": "stdout_contains",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DiscoverySource": {
+      "properties": {
+        "discovered_at": {
+          "description": "RFC 3339 timestamp of the scan that produced (or last confirmed) this record.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/DiscoverySourceKind"
+        }
+      },
+      "required": [
+        "kind",
+        "discovered_at"
+      ],
+      "type": "object"
+    },
+    "DiscoverySourceKind": {
+      "description": "Where discovery found a capability.",
+      "enum": [
+        "path",
+        "package_manifest",
+        "makefile",
+        "cargo_manifest",
+        "justfile"
+      ],
+      "type": "string"
+    },
+    "EffectCertainty": {
+      "description": "How firmly the effect assessment is established.",
+      "oneOf": [
+        {
+          "const": "unknown",
+          "description": "Nothing is known. Unknown effects are never treated as read-only.",
+          "type": "string"
+        },
+        {
+          "const": "heuristic",
+          "description": "Guessed from names or script bodies.",
+          "type": "string"
+        },
+        {
+          "const": "declared",
+          "description": "Declared by a user (bound to the capability fingerprint).",
+          "type": "string"
+        }
+      ]
+    },
+    "EffectClass": {
+      "description": "Classes of effect an operation may have.",
+      "oneOf": [
+        {
+          "enum": [
+            "read_only",
+            "modifies_files",
+            "deletes",
+            "publishes",
+            "deploys",
+            "privilege_escalation"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "network",
+          "description": "Network access / external communication.",
+          "type": "string"
+        }
+      ]
+    },
+    "Effects": {
+      "properties": {
+        "certainty": {
+          "$ref": "#/$defs/EffectCertainty"
+        },
+        "classes": {
+          "description": "Possible effects. Empty when certainty is `unknown`.",
+          "items": {
+            "$ref": "#/$defs/EffectClass"
+          },
+          "type": "array"
+        },
+        "confidence": {
+          "format": "double",
+          "type": "number"
+        },
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "classes",
+        "certainty",
+        "source",
+        "confidence"
+      ],
+      "type": "object"
+    },
+    "EnrichmentState": {
+      "description": "How much the system knows about a capability. These are knowledge states,\nnot safety ratings.",
+      "oneOf": [
+        {
+          "const": "discovered",
+          "description": "Name and location only.",
+          "type": "string"
+        },
+        {
+          "const": "described",
+          "description": "Purpose inferred from metadata or help output.",
+          "type": "string"
+        },
+        {
+          "const": "characterized",
+          "description": "Invocation constraints, inputs, outputs, or effects are characterized.",
+          "type": "string"
+        },
+        {
+          "const": "observed",
+          "description": "Real execution history exists for the current fingerprint.",
+          "type": "string"
+        }
+      ]
+    },
+    "HelpCapture": {
+      "description": "Bounded capture of help output, recorded only when explicitly requested.",
+      "properties": {
+        "arguments": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "captured_at": {
+          "type": "string"
+        },
+        "excerpt": {
+          "description": "The first part of the help text.",
+          "type": "string"
+        },
+        "exit_code": {
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "captured_at",
+        "arguments",
+        "truncated",
+        "excerpt"
+      ],
+      "type": "object"
+    },
+    "Interface": {
+      "properties": {
+        "arguments": {
+          "description": "Fixed leading arguments, e.g. `[\"run\", \"test\"]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "capture": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InterfaceCapture"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How the interface was captured, when it came from help output."
+        },
+        "completeness": {
+          "$ref": "#/$defs/InterfaceCompleteness"
+        },
+        "executable": {
+          "description": "Executable name (not path) to invoke. For project tasks this is the task\nrunner (`npm`, `make`, ...).",
+          "type": "string"
+        },
+        "known_flags": {
+          "default": [],
+          "description": "Flags documented by the capability (never invented).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "options": {
+          "default": [],
+          "description": "Options recognized in help output (never invented).",
+          "items": {
+            "$ref": "#/$defs/OptionSpec"
+          },
+          "type": "array"
+        },
+        "parameters": {
+          "default": [],
+          "description": "Positional parameters appended after `arguments`, in order.",
+          "items": {
+            "$ref": "#/$defs/Parameter"
+          },
+          "type": "array"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "executable",
+        "arguments",
+        "completeness",
+        "source"
+      ],
+      "type": "object"
+    },
+    "InterfaceCapture": {
+      "description": "Provenance of an interface obtained from `<exe> --help`. Bound to the\nexecutable's fingerprint: a different fingerprint means a different\nexecutable, and this record no longer applies.",
+      "properties": {
+        "alternate_usage_forms": {
+          "default": 0,
+          "description": "Further usage forms that were seen but not interpreted.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "captured_at": {
+          "type": "string"
+        },
+        "executable_fingerprint": {
+          "type": "string"
+        },
+        "executable_path": {
+          "type": "string"
+        },
+        "exit_code": {
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "method": {
+          "description": "Arguments passed to obtain help (explicit, user-consented).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "output_ref": {
+          "description": "Evidence reference of the full captured output, when there was any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "parser_version": {
+          "description": "Version of the parser that produced the interface.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/CaptureStatus"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "uncertainties": {
+          "default": [],
+          "description": "What the parser could not determine, or why the capture failed.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "usage_line": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "captured_at",
+        "executable_path",
+        "executable_fingerprint",
+        "method",
+        "truncated",
+        "parser_version"
+      ],
+      "type": "object"
+    },
+    "InterfaceCompleteness": {
+      "oneOf": [
+        {
+          "const": "unknown",
+          "description": "Nothing is known beyond the executable name.",
+          "type": "string"
+        },
+        {
+          "const": "partial",
+          "description": "Some options or positionals were recognized in help output, but the\nusage form as a whole was not understood. Not enough to build a call.",
+          "type": "string"
+        },
+        {
+          "const": "inferred",
+          "description": "Parameters were inferred, e.g. from a usage line in help output.",
+          "type": "string"
+        },
+        {
+          "const": "declared",
+          "description": "The exact invocation is defined by a manifest or a user declaration.",
+          "type": "string"
+        },
+        {
+          "const": "observed",
+          "description": "The invocation has been executed and observed.",
+          "type": "string"
+        }
+      ]
+    },
+    "Location": {
+      "description": "Physical location, kept distinct from logical identity.",
+      "properties": {
+        "path": {
+          "description": "Absolute path of the executable or of the manifest that defines the task.",
+          "type": "string"
+        },
+        "project_root": {
+          "description": "Project root for project tasks.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shadows": {
+          "description": "Other executables on `PATH` with the same name that this one shadows.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "OptionSpec": {
+      "description": "An option recognized in help output. Recognition is not endorsement: the\nplanner never adds an option the request did not explicitly call for.",
+      "properties": {
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "names": {
+          "description": "The option and its aliases, e.g. `[\"-n\", \"--line-number\"]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "source": {
+          "description": "Where it was recognized: `help_output:options` or `help_output:usage`.",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/OptionValue"
+        },
+        "value_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "names",
+        "value",
+        "source"
+      ],
+      "type": "object"
+    },
+    "OptionValue": {
+      "description": "Whether a recognized option takes a value.",
+      "oneOf": [
+        {
+          "enum": [
+            "required",
+            "optional"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "none",
+          "description": "A flag.",
+          "type": "string"
+        }
+      ]
+    },
+    "Parameter": {
+      "description": "A positional input of a capability's interface.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "omitted_means": {
+          "description": "What omitting this parameter means, when the help text states it\n(e.g. \"searches the current directory\"). Absent: omission is not known\nto be harmless.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string"
+        },
+        "variadic": {
+          "default": false,
+          "description": "Whether the parameter can appear more than once (`<file>...`).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "required",
+        "source"
+      ],
+      "type": "object"
+    },
+    "Provenanced": {
+      "description": "A value together with where it came from and how much it is trusted.",
+      "properties": {
+        "confidence": {
+          "description": "0.0 – 1.0.",
+          "format": "double",
+          "type": "number"
+        },
+        "source": {
+          "description": "Where the value came from, e.g. `package_manifest`, `help_output`,\n`heuristic:task_name`, `user_declaration`.",
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "confidence"
+      ],
+      "type": "object"
+    },
+    "Provenanced2": {
+      "description": "A value together with where it came from and how much it is trusted.",
+      "properties": {
+        "confidence": {
+          "description": "0.0 – 1.0.",
+          "format": "double",
+          "type": "number"
+        },
+        "source": {
+          "description": "Where the value came from, e.g. `package_manifest`, `help_output`,\n`heuristic:task_name`, `user_declaration`.",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/Check"
+        }
+      },
+      "required": [
+        "value",
+        "source",
+        "confidence"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "capabilities": {
+      "items": {
+        "$ref": "#/$defs/Capability"
+      },
+      "type": "array"
+    },
+    "project": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "project",
+    "capabilities"
+  ],
+  "title": "CapabilitiesResult",
+  "type": "object"
+}

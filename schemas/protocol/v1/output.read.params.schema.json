@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "max_bytes": {
+      "default": null,
+      "format": "uint",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "output_id": {
+      "description": "`out_N`, `out_N.S`, `exec_N` or `latest` (see the CLI's `output` command).",
+      "type": "string"
+    },
+    "part": {
+      "description": "`stdout`, `stderr`, `response` or `command-and-response`.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "output_id",
+    "part"
+  ],
+  "title": "OutputParams",
+  "type": "object"
+}

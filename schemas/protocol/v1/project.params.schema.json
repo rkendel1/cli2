@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The project context every project-scoped request names explicitly.",
+  "properties": {
+    "project": {
+      "description": "Absolute path to a local directory.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project"
+  ],
+  "title": "ProjectParams",
+  "type": "object"
+}

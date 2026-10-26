@@ -447,8 +447,15 @@ impl Journal {
         kind: &str,
         data: &T,
     ) -> Result<(), JournalError> {
-        let prev: String = self
-            .conn
+        // Reading the previous hash and appending must be one atomic step: with
+        // several writers (concurrent CLI processes, an embedding runtime's
+        // threads) two events would otherwise chain from the same predecessor
+        // and fork the log. An immediate transaction takes the write lock first.
+        let tx = rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )?;
+        let prev: String = tx
             .query_row(
                 "SELECT hash FROM events ORDER BY seq DESC LIMIT 1",
                 [],
@@ -459,10 +466,11 @@ impl Journal {
         let now = cli2_core::now_rfc3339();
         let json = to_json(data);
         let hash = event_hash(&prev, request_id, &now, kind, &json);
-        self.conn.execute(
+        tx.execute(
             "INSERT INTO events(request_id, recorded_at, kind, json, prev_hash, hash) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![request_id, now, kind, json, prev, hash],
         )?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -491,6 +499,32 @@ impl Journal {
             prev = h;
         }
         Ok(())
+    }
+
+    /// Approval decisions recorded for a plan, oldest first.
+    pub fn approvals_for_plan(&self, plan_id: &str) -> Result<Vec<ApprovalRecord>, JournalError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT json FROM approvals WHERE plan_id = ?1 ORDER BY rowid")?;
+        let rows = stmt.query_map(params![plan_id], |r| r.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(from_json(&r?)?);
+        }
+        Ok(out)
+    }
+
+    /// A recorded approval decision.
+    pub fn approval(&self, approval_id: &str) -> Result<ApprovalRecord, JournalError> {
+        let json: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT json FROM approvals WHERE approval_id = ?1",
+                params![approval_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        from_json(&json.ok_or_else(|| JournalError::NotFound(approval_id.to_string()))?)
     }
 
     pub fn plan(&self, plan_id: &str) -> Result<Plan, JournalError> {
@@ -659,6 +693,39 @@ fn from_json<T: serde::de::DeserializeOwned>(s: &str) -> Result<T, JournalError>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn concurrent_writers_never_fork_the_hash_chain() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().to_path_buf();
+        let threads: Vec<_> = (0..6)
+            .map(|t| {
+                let p = path.clone();
+                std::thread::spawn(move || {
+                    // Separate connections, like separate processes or runtime threads.
+                    let j = Journal::open(&p).unwrap();
+                    for i in 0..40 {
+                        j.event(
+                            &format!("req_{t}"),
+                            "tick",
+                            &serde_json::json!({"t": t, "i": i}),
+                        )
+                        .unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        let j = Journal::open(&path).unwrap();
+        j.verify_chain().expect("one linear chain");
+        let n: i64 = j
+            .connection()
+            .query_row("SELECT COUNT(*) FROM events", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 240);
+    }
 
     #[test]
     fn blobs_and_chain() {

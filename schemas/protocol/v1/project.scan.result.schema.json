@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "added": {
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "changed": {
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "project": {
+      "type": "string"
+    },
+    "project_root": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "removed": {
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "project",
+    "added",
+    "changed",
+    "removed",
+    "warnings"
+  ],
+  "title": "ScanSummary",
+  "type": "object"
+}
