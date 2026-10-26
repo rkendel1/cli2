@@ -23,13 +23,16 @@ intent ──► discovery & index ──► resolution & planning ──► aut
 
 ## Install
 
-Requires a stable Rust toolchain (1.82+).
+Requires a stable Rust toolchain.
 
 ```sh
 git clone https://github.com/rkendel1/cli2 && cd cli2
-cargo install --path crates/cli2      # installs the `cli2` binary
+cargo install --path crates/cli2      # installs the `cli2` binary into ~/.cargo/bin
 cli2 --help
 ```
+
+`cli2` is a single standalone executable and works in any terminal. The zsh
+integration below is optional.
 
 ## Quick start
 
@@ -46,6 +49,104 @@ In a terminal, `cli2` shows the preview and asks before running anything that
 needs approval. Non-interactive callers (pipes, agents, `--json`) are never
 prompted: a plan that needs approval comes back as `awaiting_approval` with the
 plan ID and digest needed to approve it explicitly.
+
+## zsh integration (optional)
+
+cli2 extends your shell; it does not become your shell. The integration is a
+small file you can read before using it. It adds:
+
+* `c2`, a short name for `cli2`. Every argument is forwarded unchanged:
+  `c2 "find all references to authentication"`, `c2 plan "run the project tests"`,
+  `c2 scan`.
+* Tab completion for `cli2` and `c2`, generated from the real command
+  definitions (commands, subcommands, flags, and values such as
+  `--resolver deterministic|apple-fm|auto`).
+
+It does **not** replace zsh, change your default shell, install a
+`command_not_found_handler`, reinterpret ordinary input, or touch your aliases,
+key bindings, shell options or working directory. `git status`, `cargo test` and
+`npm run build` run exactly as before. `c2` never adds `--yes`: approval,
+verification, policy and evidence work exactly as with `cli2`. Nothing is
+evaluated; every operation still goes through the Rust runtime.
+
+### Set up
+
+```sh
+mkdir -p "${CLI2_HOME:-$HOME/.local/share/cli2}/shell"
+cli2 shell-init zsh \
+  > "${CLI2_HOME:-$HOME/.local/share/cli2}/shell/cli2.zsh"
+```
+
+Read `cli2.zsh` if you like, then add this line to `~/.zshrc` (cli2 never edits
+it for you):
+
+```sh
+source "${CLI2_HOME:-$HOME/.local/share/cli2}/shell/cli2.zsh"
+```
+
+and reload with `source ~/.zshrc` (or open a new terminal). An unset
+`CLI2_HOME` falls back to `~/.local/share/cli2`, as shown. (If you set
+`XDG_DATA_HOME` and rely on it for cli2's data, put the file wherever you
+prefer; the `source` line just has to point at it.)
+
+If you would rather get a diagnostic than a bare error when the file is
+missing, use the guarded form:
+
+```sh
+f="${CLI2_HOME:-$HOME/.local/share/cli2}/shell/cli2.zsh"
+[[ -r $f ]] && source "$f" || print -u2 "cli2: integration not found at $f (generate it: cli2 shell-init zsh)"
+```
+
+Either way a missing file never stops zsh from starting. If the `cli2`
+executable is not on `PATH`, sourcing still succeeds and `c2` prints how to
+install it and returns 127.
+
+Regenerate the file after upgrading cli2 (the first line records its format
+version). `cli2 shell-init zsh` and `cli2 completions zsh` only print text: they
+are safe to run repeatedly, deterministic, and write no files.
+
+### Completion only
+
+`cli2 completions zsh` prints a standalone completion script, for example into a
+directory on your `fpath`:
+
+```sh
+cli2 completions zsh > ~/.zfunc/_cli2     # with: fpath=(~/.zfunc $fpath) before compinit
+```
+
+Completion is local and static: it does not scan the environment, read the
+capability index, or start a model.
+
+### Ghostty, VS Code and Terminal.app
+
+The integration depends only on zsh and the installed `cli2`, so the same
+`~/.zshrc` line works in all of them. There is no Ghostty plugin and nothing to
+configure in the terminal emulator.
+
+* **Ghostty**: runs your login shell. If that is zsh, nothing else is needed.
+* **macOS Terminal**: same.
+* **VS Code**: the integrated terminal uses your default shell. If it launches
+  something else, choose zsh yourself with *Terminal: Select Default Profile*
+  from the Command Palette (or set `"terminal.integrated.defaultProfile.osx": "zsh"`
+  in your settings). cli2 does not edit your VS Code settings.
+
+Open a terminal and use them side by side:
+
+```sh
+git status                                    # ordinary commands are untouched
+cargo test
+cli2 scan                                     # discovery stays explicit (never on `cd`)
+cli2 "find all references to authentication"  # the full command
+c2 "run the project tests"                    # the shortcut: same arguments, same behaviour
+c2 plan "publish the package" --resolver auto
+```
+
+Commands act on the directory you are in, unless you pass `--cwd`.
+
+### Disable
+
+Remove or comment out the `source` line in `~/.zshrc` and start a new shell. You
+can delete `$CLI2_HOME/shell/cli2.zsh` too; cli2 itself is unaffected.
 
 ### Example: an executable cli2 has never seen
 
@@ -87,9 +188,11 @@ unknown effects meant it could not run without approval.
 | `cli2 task show ID` / `cli2 task list` | Inspect recorded requests, plans, approvals, results, and the event journal. |
 | `cli2 evidence REF` | Print a captured output blob (`evidence:sha256:…`). |
 | `cli2 schema [NAME]` | Print the published JSON Schemas. |
+| `cli2 shell-init zsh` | Print the optional zsh integration (`c2`, completion). Writes nothing. |
+| `cli2 completions zsh` | Print a standalone zsh completion script generated from the CLI definition. |
 
-An intent whose first word is a command name (e.g. `plan`) is read as that
-command; quote the whole intent or use `cli2 plan "…"` / `--no-exec` explicitly.
+An intent whose first word is a command name (e.g. `plan`, and now `shell-init`
+or `completions`) is read as that command; quote the whole intent or use `cli2 plan "…"` / `--no-exec` explicitly.
 
 ### Flags
 

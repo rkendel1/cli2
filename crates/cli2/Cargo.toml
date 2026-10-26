@@ -23,6 +23,7 @@ cli2-execution.workspace = true
 cli2-evidence.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+clap_complete.workspace = true
 ctrlc.workspace = true
 libc.workspace = true
 serde.workspace = true

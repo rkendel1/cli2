@@ -18,6 +18,7 @@ cli2-evidence = { path = "crates/cli2-evidence" }
 anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
 ctrlc = "3"
 hex = "0.4"
 jsonschema = { version = "0.60", default-features = false }

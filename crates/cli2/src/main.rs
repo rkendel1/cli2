@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use cli2::{
     render, ApprovalAnswer, Config, Engine, EngineError, Interaction, NonInteractive, RunOptions,
 };
@@ -12,6 +12,8 @@ use cli2_core::{
     ApprovalLevel, CapabilityKind, Check, EffectClass, ExecutionResult, NetworkConstraint, Plan,
     RequestInput, Status,
 };
+
+mod shell;
 
 const AFTER_HELP: &str = "\
 Examples:
@@ -174,11 +176,27 @@ enum Cmd {
         #[command(subcommand)]
         cmd: ModelCmd,
     },
+    /// Print the optional shell integration (`c2` helper and completion) to stdout.
+    /// Nothing is installed or modified; review the output, then source it.
+    ShellInit {
+        /// Only zsh is supported.
+        shell: ShellName,
+    },
+    /// Print a standalone shell completion script generated from this CLI's definition.
+    Completions {
+        /// Only zsh is supported.
+        shell: ShellName,
+    },
     /// Print the published JSON Schemas.
     Schema {
         /// request | capability | plan | result | approval
         name: Option<String>,
     },
+}
+
+#[derive(ValueEnum, Clone, Copy)]
+enum ShellName {
+    Zsh,
 }
 
 #[derive(Subcommand)]
@@ -243,7 +261,36 @@ fn print_json<T: serde::Serialize>(v: &T) {
     println!("{}", serde_json::to_string_pretty(v).expect("serializable"));
 }
 
+/// The zsh completion script for the real command tree.
+fn zsh_completions() -> String {
+    let mut buf = Vec::new();
+    clap_complete::generate(
+        clap_complete::Shell::Zsh,
+        &mut Cli::command(),
+        "cli2",
+        &mut buf,
+    );
+    String::from_utf8(buf).expect("completion script is UTF-8")
+}
+
 fn real_main(cli: Cli) -> Result<i32, EngineError> {
+    // Shell integration output is pure text: it must work with no data
+    // directory, no index and no configuration.
+    match &cli.command {
+        Some(Cmd::Completions {
+            shell: ShellName::Zsh,
+        }) => {
+            print!("{}", zsh_completions());
+            return Ok(0);
+        }
+        Some(Cmd::ShellInit {
+            shell: ShellName::Zsh,
+        }) => {
+            print!("{}", shell::zsh_integration(&zsh_completions()));
+            return Ok(0);
+        }
+        _ => {}
+    }
     if let Some(dir) = &cli.global.cwd {
         std::env::set_current_dir(dir)
             .map_err(|e| EngineError::Invalid(format!("--cwd {}: {e}", dir.display())))?;
@@ -254,6 +301,8 @@ fn real_main(cli: Cli) -> Result<i32, EngineError> {
     let config = Config::from_env()?;
 
     match cli.command {
+        // Handled before configuration is loaded (see the top of this function).
+        Some(Cmd::ShellInit { .. } | Cmd::Completions { .. }) => Ok(0),
         Some(Cmd::Schema { name }) => {
             let all = cli2_core::schemas();
             match name {
