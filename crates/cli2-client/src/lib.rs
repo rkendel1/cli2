@@ -164,6 +164,21 @@ impl Client {
         )
     }
 
+    /// Only the capabilities of these kinds (for example just a project's own tasks).
+    pub fn capabilities_of(
+        &mut self,
+        project: &str,
+        kinds: &[cli2_core::CapabilityKind],
+    ) -> Result<CapabilitiesResult, ClientError> {
+        self.call(
+            ops::CAPABILITIES_LIST,
+            &CapabilitiesListParams {
+                project: project.into(),
+                kinds: kinds.to_vec(),
+            },
+        )
+    }
+
     /// Plan an intent. Never executes.
     pub fn plan(&mut self, project: &str, intent: &str) -> Result<PlanResult, ClientError> {
         self.plan_with(PlanParams {

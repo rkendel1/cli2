@@ -272,6 +272,20 @@ pub struct ProjectParams {
     pub project: String,
 }
 
+/// List what cli2 knows how to run. Without `kinds` this is everything discovered, including
+/// every executable on `PATH`, which on a real machine can be larger than a protocol message.
+/// A client that wants only a project's own tasks says so.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CapabilitiesListParams {
+    /// Absolute path to a local directory.
+    pub project: String,
+    /// Only capabilities of these kinds (`executable`, `project_task`, `shell_operation`).
+    /// Absent or empty: all of them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kinds: Vec<cli2_core::CapabilityKind>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ScanSummary {
     pub project: String,
@@ -691,6 +705,7 @@ pub fn schemas() -> Vec<(&'static str, Value)> {
         ("hello.result", s::<HelloResult>()),
         ("project.params", s::<ProjectParams>()),
         ("project.scan.result", s::<ScanSummary>()),
+        ("capabilities.list.params", s::<CapabilitiesListParams>()),
         ("capabilities.list.result", s::<CapabilitiesResult>()),
         ("intent.plan.params", s::<PlanParams>()),
         ("intent.plan.result", s::<PlanResult>()),

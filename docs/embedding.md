@@ -89,7 +89,7 @@ directory and never scans a project it was not given.
 |---|---|
 | `hello` | `{client, versions}` → `{protocol_version, supported_versions, server, instance_id, operations, limits}` (must come first) |
 | `project.scan` | `{project}` → counts and warnings (explicit discovery) |
-| `capabilities.list` | `{project}` → capabilities (`cli2.capability.v1`) |
+| `capabilities.list` | `{project, kinds?}` → capabilities (`cli2.capability.v1`). Without `kinds` this is everything discovered, including every executable on `PATH`, which can exceed a message on a real machine; pass `["project_task"]` to get just the project's own tasks |
 | `intent.plan` | `{project, intent, idempotency_key?, constraints?, bindings?, selection?, expectations?, capture_help?, resolver?, timeout_secs?}` → `{outcome: cli2.result.v1, approvability, required_approval, deduplicated}` — **never executes** |
 | `plan.get` | `{plan_id}` → plan, approvals, executions, `rejected`, `stale_reasons` |
 | `plan.approve` | `{plan_id, plan_digest}` → `{approval}`. The **full** digest is required; a short or wrong one is `approval_mismatch` |

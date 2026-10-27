@@ -468,7 +468,8 @@ fn dispatch(
     }
     match req.op.as_str() {
         ops::PROJECT_SCAN => with!(ProjectParams, |p| rt.scan(&p.project)),
-        ops::CAPABILITIES_LIST => with!(ProjectParams, |p| rt.capabilities(&p.project)),
+        ops::CAPABILITIES_LIST => with!(CapabilitiesListParams, |p| rt
+            .capabilities_of_kinds(&p.project, &p.kinds)),
         ops::INTENT_PLAN => with!(PlanParams, |p| rt.plan(p)),
         ops::PLAN_GET => with!(PlanIdParams, |p| rt.plan_get(&p.plan_id)),
         ops::PLAN_APPROVE => with!(ApproveParams, |p| rt.approve(&p.plan_id, &p.plan_digest)),
